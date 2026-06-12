@@ -57,6 +57,8 @@ object Syntax {
   /** A $dklp reference to a declared symbol.
    * @param id the name of the symbol */
   case  class Symb(id: Ident) extends Term
+  /** A $dklp wildcard, for an unprovided term */
+  case object Wildcard extends Term
   /** A $dklp reference to a named binder
    * @param id the name of the binder */
   case  class  Var(id: Ident) extends Term
@@ -91,11 +93,12 @@ object Syntax {
    * @return the term which results from applying <$arg>head<$arge>
    *         to each argument in <$arg>spine<$arge>.*/
   @tailrec
-  def appls(head: Term, spine: List[Term], impl: List[Boolean]): Term =
+  def appls(head: Term, spine: List[Term], impl: List[Option[Boolean]]): Term =
     (spine, impl) match {
-      case (Nil, impl) if impl.exists(identity) => isabelle.error("Missing implicit argument")
+      case (spine, None :: impls) => appls(Appl(head, Wildcard, isImplicit = true), spine, impls)
+      case (Nil, impl) if impl.exists(!_.contains(false)) => isabelle.error("Missing implicit argument")
       case (Nil, _) => head
-      case (arg :: spine, impl :: impls) => appls(Appl(head, arg, impl), spine, impls)
+      case (arg :: spine, Some(impl) :: impls) => appls(Appl(head, arg, impl), spine, impls)
       case (spine, Nil) => spine.foldLeft(head)(Appl(_, _))
     }
 
@@ -213,9 +216,13 @@ object Syntax {
    * @param ty the type of the symbol
    * @param inj a boolean value expressing whether the symbol is injective or not <br>
    *            ($lp exclusive)
-   * @param not an optional $lp notation for the symbol (default: <$met>None<$mete>)
+   * @param tc a boolean value expressing whether the symbol is a typeclass or not <br>
+   *            ($lp exclusive)
+   * @param inst a boolean value expressing whether the symbol is a typeclass instance or not <br>
+   *            ($lp exclusive)
+   * @param not an optional $lp notation for the symbol
    */
-  case class DefableDecl(id: Ident, ty: Typ, inj: Boolean = false, not: Option[Notation] = None) extends Command
+  case class DefableDecl(id: Ident, ty: Typ, inj: Boolean = false, tc: Boolean = false, inst: Boolean = false, not: Option[Notation] = None) extends Command
   /** <$lpc>constant symbol id (args) : ty ≔ tm;( notation not;)<$lpce>
    * Command declaring a $dklp symbol with a definition.
    *

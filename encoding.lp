@@ -6,10 +6,10 @@ builtin "arr" ≔ STTfa.arr;
 builtin "El" ≔ STTfa.El;
 builtin "Prf" ≔ STTfa.Prf;
 
-builtin "eq" ≔ HOL_HOL.eq_const;
+builtin "eq" ≔ Pure.eq;
 builtin "not" ≔ HOL_HOL.Not;
 builtin "imp" ≔ STTfa.imp;
 builtin "and" ≔ HOL_HOL.conj;
 builtin "or" ≔ HOL_HOL.disj;
-builtin "all" ≔ HOL_HOL.All;
+builtin "all" ≔ STTfa.all;
 builtin "ex" ≔ HOL_HOL.Ex;

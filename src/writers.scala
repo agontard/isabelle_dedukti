@@ -7,7 +7,29 @@ import isabelle.dedukti.Syntax.*
 
 import java.io.{BufferedWriter, FileOutputStream, OutputStreamWriter, Writer}
 import java.nio.file.{Files, StandardCopyOption}
+import scala.annotation.tailrec
 import scala.collection.mutable.Map as MutableMap
+
+/** functions to write a class dependency map, to reuse for the rocq export. */
+class Map_Writer(file : Path) extends AutoCloseable {
+  private val writer =
+    new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file.file), UTF8.charset))
+
+  @tailrec
+  private def sumstring(names: List[String], acc: String = ":"): String = names match {
+    case Nil => ">Type'\n"
+    case List(name) => acc + name + '\n'
+    case name::rest => sumstring(rest, acc + name + '+')
+  }
+
+  def write_class_def(cname: String, cdeps: List[String]): Unit =
+    writer.write(cname + sumstring(cdeps))
+
+  def write_class_parent(cname:String, pname:String): Unit =
+    writer.write(cname+">"+pname+'\n')
+
+  def close(): Unit = writer.close()
+}
 
 /** Opens a path.part file for writing and then copy it to path.
  * @see [[Writer]] */
@@ -398,6 +420,8 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
     t match {
       case Syntax.TYPE =>
         write("TYPE")
+      case Syntax.Wildcard =>
+        write("_")
       case Syntax.Symb(id) if notations contains id =>
         appl(t, notations, prevNot, no_impl, right, needs_explicit)
       case Syntax.Symb(id) =>
@@ -432,6 +456,8 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
     t match {
       case Syntax.TYPE =>
         write("TYPE")
+      case Syntax.Wildcard =>
+        write("_")
       case Syntax.Symb(id) if notations contains id =>
         error("There should be no notations in this mode")
       case Syntax.Symb(id) =>
@@ -512,6 +538,7 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
     def newvars(idopt: Option[Ident]): Set[Ident] = idopt.fold(vars)(vars - _)
     t match {
       case Syntax.TYPE => t
+      case Syntax.Wildcard => t
       case Syntax.Symb(_) => t
       case Syntax.Var(id) if vars(id) => Syntax.Var("$" + id)
       case Syntax.Var(_) => t
@@ -578,11 +605,13 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
         hook_arrow()
         term(patternize(rhs, vars_set), notations, no_impl = true)
       case Syntax.Declaration(id, args, ty, not) =>
-        write("constant ")
-        symbol_and_notation(id, args, Some(ty), None, not, notations)
-      case Syntax.DefableDecl(id, ty, inj, not) =>
-        if (inj) write("injective ")
-        symbol_and_notation(id, List(), Some(ty), None, not, notations)
+        symbol_and_notation(id, args, Some(ty), None, not, notations, "constant ")
+      case Syntax.DefableDecl(id, ty, inj, tc, inst, not) =>
+        val injm = if (inj) "injective " else ""
+        val tcm = if (tc) "typeclass " else ""
+        val instm = if (inst) "instance " else ""
+        val prefix = injm + tcm + instm
+        symbol_and_notation(id, List(), Some(ty), None, not, notations, prefix)
       case Syntax.Definition(id, args, ty, tm, not) =>
         symbol_and_notation(id, args, ty, Some(tm), not, notations)
       case Syntax.Theorem(id, args, ty, prf) =>
@@ -632,6 +661,8 @@ class DK_Writer(writer: Writer) extends Abstract_Writer("", writer) {
     t match {
       case Syntax.TYPE =>
         write("Type")
+      case Syntax.Wildcard =>
+        write("_")
       case Syntax.Symb(id) =>
         sym_qident(id)
       case Syntax.Var(id) =>
@@ -682,8 +713,7 @@ class DK_Writer(writer: Writer) extends Abstract_Writer("", writer) {
           space()
           block { arg(a, block = false, notations) }
         }
-        colon(); term(ty)
-      case Syntax.DefableDecl(id, ty, _, _) =>
+      case Syntax.DefableDecl(id, ty, _, _, _, _) =>
         write("def ")
         sym_ident(id)
         colon(); term(ty)
