@@ -116,7 +116,15 @@ object Exporter {
     }
   }
 
-  /** whether an $isa term is a free variable, possibly lambda-abstracted */
+  /** whether an $isa term is a specific (possibly eta_expanded) free variable
+   * 
+   * @param term the $isa term to test
+   * @param name the free variable name to search for
+   * @param n_Abs the amount of Abs cases encountered so far
+   * @param n_App the amount of App cases encountered so far
+   * @return true if <code><$argc>term<$argce>=eta_k1(...(eta_kn(<$metc>Free<$metce>(<$argc>name<$argce>)))...)</code>
+   *         where <code>eta_i(f)=λx1 ... xi, f x1 ... xi</code>
+   */
   @tailrec
   def is_abstract_free(term: Term, name: String, n_Abs: Int = 0, n_App: Int = 0): Boolean = term match {
       case Abs(_, _, remainder) => is_abstract_free(remainder, name, n_Abs+1, n_App)
@@ -124,7 +132,7 @@ object Exporter {
       case Free(othername, _) => n_Abs == n_App && name == othername
       case _ => false
     }
- 
+
   /** Reads an $isa session and possibly translates it to $dk files
    * 
    * @param options $isa options to read the session
@@ -154,7 +162,11 @@ object Exporter {
 
     /** depending on variable <code>to_lp</code>, opens an [[LP_Writer]] or a [[DK_Writer]] */
     def new_Writer(writer: Writer): Abstract_Writer =
-      if (to_lp) new LP_Writer(use_notations,writer)
+      if (to_lp) {
+        writer.write("""flag "eta_equality" on;""")
+        writer.write('\n')
+        new LP_Writer(use_notations,writer)
+      }
       else new DK_Writer(writer)
 
     /** .lp or .dk depending on variable <code>to_lp</code> */
@@ -172,7 +184,7 @@ object Exporter {
      * @define isace /span></code
      */
     def is_eq_axiom(a:Entity[Axiom]): Option[(String,Term,List[Typ],Term)] = {
-      if (!(a.name.endsWith("_def") || a.name.endsWith("_def_raw") || a.name.endsWith("dict"))) None
+      if (!(a.name.endsWith("_def") || a.name.endsWith("_def_raw") || a.name.endsWith("_dict"))) None
       else a.the_content.prop.term match {
         case App(App(Term.Const(id, _), _), _) if id != "Pure.eq" =>
           if (verbose) progress.echo("axiom " + a.name + ": cannot extract definition because it is headed by " + id + " instead of Pure.eq")
@@ -189,8 +201,6 @@ object Exporter {
               None
             case (h @ Term.Const(n, tys), args) =>
               if (verbose) progress.echo("  head: " + h.toString + "\n  args: " + args.toString + "\n  rhs: " + rhs.toString)
-              // TODO: Modified this method quite a bit, especially here, please tell me if it is wrong
-              //       I particularly removed a part that I believe was impossible to reach.
               val revargs = args.reverse
               val rhs2 = debruijn(revargs, rhs)
               val dfn = revargs.foldLeft(rhs2)(abs)
@@ -286,14 +296,16 @@ object Exporter {
 
         /** Same as remove_useless_proofs (below) but only update the Translate.replace_serial map */
         @tailrec
-        def update_useless_proofs(name: String, proof: Term.Proof): Unit = proof match {
-          case PThm(serial, origin_theory, thm_name, _) if thm_name.is_empty &&
+        def update_useless_proofs(name: String, proof: Term.Proof, args: List[String]): Unit = (proof,args) match {
+          case (PThm(serial, origin_theory, thm_name, _),Nil) if thm_name.is_empty &&
             origin_theory == theory_name & !Translate.replace_serial.contains(serial) =>
             Translate.replace_serial += serial -> name
-            // otherwise scala does not recognise tail recursiveness
-            val next_proof = use_proof(theory_name, serial) { case (prf, _) => prf }
-            update_useless_proofs(name, next_proof)
-          case Appt(rem, arg) if is_abstract_free(arg) => update_useless_proofs(name, rem)
+            val (next_proof,next_args) = use_proof(theory_name, serial) {
+              case (prf, prop) => (prf, prop.args.map(_._1).reverse)
+            }
+            update_useless_proofs(name, next_proof, next_args)
+          case (Appt(proofrem, arg),argname::argsrem) if is_abstract_free(arg,argname) =>
+            update_useless_proofs(name, proofrem, argsrem)
           case _ =>
         }
 
@@ -615,15 +627,18 @@ object Exporter {
              * @define arge /span></code
              */
             @tailrec
-            def remove_useless_proofs(name: String, proof: Term.Proof,
-                                      encountered_lemmas: List[Long] = Nil): Boolean = proof match {
-              case PThm(serial, origin_theory, thm_name, _) if thm_name.is_empty &&
+            def remove_useless_proofs(name: String, proof: Term.Proof, args: List[String],
+                                      encountered_lemmas: List[Long] = Nil): Boolean = (proof,args) match {
+              case (PThm(serial, origin_theory, thm_name, _),Nil) if thm_name.is_empty &&
                 origin_theory == theory_name && !Translate.replace_serial.contains(serial) =>
                 Translate.replace_serial += serial -> name
                 // otherwise scala does not recognise tail recursiveness
-                val next_proof = use_proof(theory_name, serial) { case (prf, _) => prf }
-                remove_useless_proofs(name, next_proof, serial :: encountered_lemmas)
-              case Appt(rem, arg) if is_abstract_free(arg) => remove_useless_proofs(name, rem, encountered_lemmas)
+                val (next_proof,next_args) = use_proof(theory_name, serial) {
+                  case (prf, prop) => (prf, prop.args.map(_._1).reverse)
+                }
+                remove_useless_proofs(name, next_proof, next_args, serial :: encountered_lemmas)
+              case (Appt(proofrem, arg), argname::argsrem) if is_abstract_free(arg,argname) =>
+                remove_useless_proofs(name, proofrem, argsrem, encountered_lemmas)
               case _ =>
                 encountered_lemmas match {
                   case final_lemma :: remainder =>
@@ -695,7 +710,8 @@ object Exporter {
             val prfs = map_theory_proofs(theory_name).toList
 
             /** remove all useless lemmas and keep the theorems that did not replace a lemma */
-            val thms = for (thm <- theory.thms if remove_useless_proofs(thm.name,thm.the_content.proof))
+            val thms = for ( thm <- theory.thms if remove_useless_proofs(thm.name,
+                               thm.the_content.proof, thm.the_content.prop.args.map(_._1).reverse) )
               yield thm
 
             write_proofs(prfs,thms)

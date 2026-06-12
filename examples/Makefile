@@ -24,8 +24,10 @@ ROCQ_OPTIONS = -q -no-glob
 ROOT_DIR = .
 OUT_DIR = .
 
-SESSION_DIR := $(ROOT_DIR)/$(SESSION)
 TIME := /usr/bin/time -f %e
+SESSION_DIR := $(ROOT_DIR)/$(SESSION)
+# dk does not allow . and - in module names, they are replaced by _
+SESSION_MODNAME := session_$(subst .,_,$(subst -,_,$(SESSION)))
 
 ############# generation of Isabelle proofs ##############
 
@@ -38,19 +40,15 @@ isadb_dir.mk:
 clean-isadb_dir.mk:
 	rm -f isadb_dir.mk
 
-# dk does not allow . and - in module names, they are replaced by _
-SESSION_MODNAME := session_$(subst .,_,$(subst -,_,$(SESSION)))
-
 ifneq ($(SESSION),"Pure")
 .PHONY: build
 build: $(ISADB_DIR)/$(SESSION).db
 
 $(ISADB_DIR)/%.db: $(ROOT_DIR)/ROOT $(SESSION_DIR)
-	isabelle build -b -d$(ROOT_DIR) $*
-	@touch $@
+	@if test -f $@; then touch $@; else isabelle build -b -d$(ROOT_DIR) $*; fi
 
-$(SESSION_DIR):
-	mkdir -p $@
+$(SESSION_DIR): $(ROOT_DIR)/ROOT
+	@if grep -q "session $(SESSION) " $<; then echo mkdir $@; mkdir -p $@; touch $@; else echo "there is no session $(SESSION) in $<"; exit 1; fi
 
 .PHONY: clean-build
 clean-build:
@@ -65,9 +63,11 @@ dk: $(OUT_DIR)/$(SESSION_MODNAME).dk
 ifeq ($(SESSION),Pure)
 $(OUT_DIR)/$(SESSION_MODNAME).dk: $(OUT_DIR)/STTfa.dk
 	isabelle dedukti_generate -k -d$(ROOT_DIR) -D$(OUT_DIR) $(ISADK_OPT) $(SESSION)
+	@touch $@
 else
 $(OUT_DIR)/$(SESSION_MODNAME).dk: $(ISADB_DIR)/$(SESSION).db $(OUT_DIR)/STTfa.dk
 	isabelle dedukti_generate -k -d$(ROOT_DIR) -D$(OUT_DIR) $(ISADK_OPT) $(SESSION)
+	@touch $@
 endif
 
 $(OUT_DIR)/STTfa.dk: $(ISADK_DIR)/STTfa.dk
@@ -157,10 +157,10 @@ rm-lpo:
 ############# generation of Rocq files ##############
 
 DK_FILES := $(wildcard $(OUT_DIR)/*.dk)
-LP_FILES := $(wildcard $(OUT_DIR)/*.lp)
+#LP_FILES := $(wildcard $(OUT_DIR)/*.lp)
 
 .PHONY: v
-v: $(OUT_DIR)/mappings.v $(DK_FILES:%.dk=%.v) $(LP_FILES:%.lp=%.v)
+v: $(OUT_DIR)/mappings.v $(DK_FILES:%.dk=%.v)
 
 LAMBDAPI = lambdapi
 
@@ -171,9 +171,9 @@ $(OUT_DIR)/mappings.v: $(ISADK_DIR)/mappings.v
 	@echo lambdapi export -o stt_coq $<
 	@$(LAMBDAPI) export -o stt_coq --encoding $(ISADK_DIR)/encoding.lp --mapping $(ISADK_DIR)/mappings.lp --renaming $(ISADK_DIR)/renaming.lp --requiring mappings $< | sed -e '/^Require STTfa\./d' > $@
 
-%.v: %.lp
-	@echo lambdapi export -o stt_coq $<
-	@$(LAMBDAPI) export -o stt_coq --encoding $(ISADK_DIR)/encoding.lp --mapping $(ISADK_DIR)/mappings.lp --renaming $(ISADK_DIR)/renaming.lp --requiring mappings $< | sed -e '/^Require Isabelle\.STTfa\./d' > $@
+#%.v: %.lp
+#	@echo lambdapi export -o stt_coq $<
+#	@$(LAMBDAPI) export -o stt_coq --encoding $(ISADK_DIR)/encoding.lp --mapping $(ISADK_DIR)/mappings.lp --renaming $(ISADK_DIR)/renaming.lp --requiring mappings $< | sed -e '/^Require Isabelle\.STTfa\./d' > $@
 
 .PHONY: clean-v
 clean-v: rm-v rm-vo-mk clean-vo
