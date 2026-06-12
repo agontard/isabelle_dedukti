@@ -10,7 +10,7 @@ import java.nio.file.{Files, StandardCopyOption}
 import scala.annotation.tailrec
 import scala.collection.mutable.Map as MutableMap
 
-/** functions to write a class dependency map, to reuse for the rocq export. */
+/*/** functions to write a class dependency map, to reuse for the rocq export. */
 class Map_Writer(file : Path) extends AutoCloseable {
   private val writer =
     new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file.file), UTF8.charset))
@@ -47,7 +47,7 @@ class Part_Writer(file: Path) extends Writer {
     writer.close()
     Files.move(file_part.file.toPath, file.file.toPath, StandardCopyOption.REPLACE_EXISTING)
   }
-}
+}*/
 
 /** Tools to write <span style="color:#9932CC;">Lambdapi</span> identifiers */
 trait Ident_Writer {

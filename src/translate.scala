@@ -384,13 +384,6 @@ object Translate {
    */
   def eta(ty: Syntax.Term): Syntax.Typ = Syntax.Appl(etaT, ty)
 
-  /** Function mapping an $isa class <$arg>c<$arge> to a $dklp type storing the
-   *  class information.
-   * @param c the name of the class
-   * @return the type <$lpc>ignore c<$lpce>, which rewrites to <$lpc>Set<$lpce>
-   */
-  def ignore_class(c : String): Syntax.Typ = Syntax.Appl(Syntax.Symb("ignore_class"),Syntax.Symb(ref_class_type_ident(c)))
-
   /** Translates an $isa term to a $dklp one 
    *
    * @param tm the $isa term to translate
@@ -604,7 +597,7 @@ object Translate {
       }
     }
 
-/** Create and name new arguments to a $dklp function when
+ /** Create and name new arguments to a $dklp function when
    *  they do not already exist (partially applied function)
    *  
    * @param known_argnames the names given to the arguments in the type/proposition
