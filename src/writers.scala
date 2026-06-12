@@ -29,7 +29,7 @@ class Map_Writer(file : Path) extends AutoCloseable {
     writer.write(cname+">"+pname+'\n')
 
   def close(): Unit = writer.close()
-}
+}*/
 
 /** Opens a path.part file for writing and then copy it to path.
  * @see [[Writer]] */
@@ -47,7 +47,7 @@ class Part_Writer(file: Path) extends Writer {
     writer.close()
     Files.move(file_part.file.toPath, file.file.toPath, StandardCopyOption.REPLACE_EXISTING)
   }
-}*/
+}
 
 /** Tools to write <span style="color:#9932CC;">Lambdapi</span> identifiers */
 trait Ident_Writer {
