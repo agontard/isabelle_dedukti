@@ -146,6 +146,19 @@ object Prelude {
    * <$metc><u>[[add_name]]</u><$metce>(<$argc>a<$argce>+<$str>"_class_type"<$stre>, <$str>"type"<$stre>, <$argc>module<$argce>)</pre></code>
    */
   def add_class_type_ident(a: String, module: String): String = add_name(a + "_class_type", Export_Theory.Kind.TYPE, module)
+  /** Adds a new dependency instance name for two $isa classes
+   *
+   * @param c1 the name of the first class
+   * @param c2 the name of the second class
+   * @param module the current $dklp module
+   * @return the added name
+   * @see <$met><u>[[add_name]]</u><$mete>
+   */
+  def add_class_dep_ident(c1: String, c2: String, module: String): String = {
+    val cc1 = ref_class_type_ident(c1)
+    val cc2 = ref_class_type_ident(c2)
+    add_name(s"${cc2}_of_${cc1}", Export_Theory.Kind.CONST, module)
+  }
   /** <pre><code><$metc>add_type_ident<$metce>(<$argc>a<$argce>, <$argc>module<$argce>) =
    * <$metc><u>[[add_name]]</u><$metce>(<$argc>a<$argce>, <$str>"type"<$stre>, <$argc>module<$argce>)</pre></code>
    */
@@ -172,12 +185,23 @@ object Prelude {
    * @return The translated name of the object <$arg>a<$arge>_class of kind const
    */
   def ref_class_ident(a: String): String = get_name(a+"_class", Export_Theory.Kind.CONST)
-  /** The translated name of an $isa class's type
+  /** The name of an $isa class's type
    *
    * @param a the name of the class
    * @return The translated name of the object <$arg>a<$arge>_class_type of kind type
    */
   def ref_class_type_ident(a: String): String = get_name(a + "_class_type", Export_Theory.Kind.TYPE)
+  /** The name of two $isa class's dependency instance
+   *
+   * @param c1 the name of an $isa class
+   * @param c2 the name of a subclass of <$arg>c1<$arge>
+   * @return The translated name of the object <$arg>a<$arge>_class_type of kind type
+   */
+  def ref_class_dep_ident(c1: String, c2: String): String = {
+    val cc1 = ref_class_type_ident(c1)
+    val cc2 = ref_class_type_ident(c2)
+    get_name(s"${cc1}_of_${cc2}", Export_Theory.Kind.CONST)
+  }
   /** The translated name of an $isa type
    *
    * @param a the name of the type
@@ -989,7 +1013,7 @@ object Translate {
   }
 
   def classrel_decl(module: String, class1: String, class2: String): Syntax.Command = {
-    val id_c = add_const_ident(s"${class2}_of_${class1}_type", module)
+    val id_c = add_class_dep_ident(class1, class2, module)
     val arg = Syntax.BoundArg(Some("A"),typeT)
     def ofclass(cname: String): Syntax.Typ = Syntax.Appl(Syntax.Symb(ref_class_type_ident(cname)),Syntax.Var("A"))
     val ty = Syntax.Prod(arg,Syntax.arrow(ofclass(class1),ofclass(class2)))
@@ -1116,6 +1140,7 @@ object Translate {
   def bound_type_arguments(args: List[String]) : (List[Syntax.BoundArg],List[Option[Boolean]]) =
     bound_type_arguments(args)()
 
+  var inst_args : Map[String,(List[Syntax.BoundArg],List[Option[Boolean]])] = Map()
 
   /** Declaration of an $isa constant in $dklp
    *
@@ -1134,6 +1159,15 @@ object Translate {
       case (List(tyvar),List(imp),s"${cname}_class$_") =>
         (bound_type_argument(tyvar, Term.OFCLASS(Term.TFree(tyvar),cname),imp),
           List(Some(imp), None))
+      case (_,_,s"${prefix}_inst${_}") =>
+        def error() = {
+          val progress = Console_Progress(verbose = true)
+          for ((name, _) <- inst_args) {
+            progress.echo("  FOUND FOR " + name)
+          }
+          isabelle.error("  NOT FOUND FOR " + prefix)
+        }
+        inst_args.getOrElse(prefix, bound_type_arguments(typargs)(impl=impl))
       case _ =>
         bound_type_arguments(typargs)(impl=impl)
     }
@@ -1143,8 +1177,7 @@ object Translate {
     global_types += id_c -> contracted_ty
     rhs match {
       case None =>
-        val (new_args, final_ty) = (Nil, contracted_ty) // fetch_head_args_type(contracted_ty)
-        Syntax.Declaration(id_c, new_args, final_ty, notation_decl(not))
+        Syntax.DefableDecl(id_c, contracted_ty, not=notation_decl(not))
       case Some(rhs) => {
         val translated_rhs = term(rhs, Bounds())
         val full_tm = bound_args.foldRight(translated_rhs)(Syntax.Abst.apply)

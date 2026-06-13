@@ -475,13 +475,19 @@ object Exporter {
                   val deps = Translate.cdeps(cname)
                   val updated = if (deps.isEmpty) acc else OfClassType(ty,Translate.canon_map(deps)) :: acc
                   wpi_rec(rest, updated)
-                case OFCLASS(ty,cname) if Translate.cdeps(cname).nonEmpty =>
-                  val args = Translate.bound_type_arguments(prop.typargs.map(_._1))._1
-                  val instty = args.foldRight(Syntax.arrows(acc.reverse,OfClassType(ty,cname)))(Syntax.Prod.apply)
-                  if (Translate.is_new_instance(instty)) {
-                    val name = Prelude.add_const_ident(prefix + "_type_instance", theory.name)
-                    val cmd = Syntax.DefableDecl(name, instty, inst = true)
-                    writer.command(cmd, notations)
+                case OFCLASS(ty,cname) =>
+                  val (args,impl) = Translate.bound_type_arguments(prop.typargs.map(_._1))
+                  val cargsty = acc.reverse
+                  val fullargs = args ::: cargsty.map(Syntax.BoundArg(None, _, implicit_arg = true))
+                  val fullimpl = impl ::: cargsty.map(_ => None)
+                  Translate.inst_args += prefix -> (fullargs,fullimpl)
+                  if (Translate.cdeps(cname).nonEmpty) {
+                    val instty = args.foldRight(Syntax.arrows(cargsty, OfClassType(ty, cname)))(Syntax.Prod.apply)
+                    if (Translate.is_new_instance(instty)) {
+                      val name = Prelude.add_const_ident(prefix + "_type_instance", theory.name)
+                      val cmd = Syntax.DefableDecl(name, instty, inst = true)
+                      writer.command(cmd, notations)
+                    }
                   }
                 case _ =>
               }
@@ -527,12 +533,12 @@ object Exporter {
             writer.comment("Unify instances of typeclass constants")
             for {
               rel <- theory.classrel
-              c <- Translate.cstdeps(rel.class1, rel.class2)
+              c <- Translate.cstdeps(rel.class1, rel.class2) if c._2 != rel.class2
             } {
               if (verbose) progress.echo(s"  unify ${c._1} for ${rel.class1} and ${rel.class2}")
-              val cofc2 = c._2 + "_of_" + rel.class2 + "_type"
-              val c2ofc1 = rel.class2 + "_of_" + rel.class1 + "_type"
-              val cofc1 = c._2 + "_of_" + rel.class1 + "_type"
+              val cofc2 = Prelude.ref_class_dep_ident(c._2,rel.class2)
+              val c2ofc1 = Prelude.ref_class_dep_ident(rel.class2,rel.class1)
+              val cofc1 = Prelude.ref_class_dep_ident(c._2,rel.class1)
               val cmd = s"rule @${c._1} $$A ($cofc2 $$A ($c2ofc1 $$A $$W)) ↪ @${c._1} $$A ($cofc1 $$A $$W);\n"
               writer.write(cmd)
             }
@@ -716,7 +722,11 @@ object Exporter {
 
             write_proofs(prfs,thms)
             progress.echo("End writing "+mod_name_theory+extension)
+            
+            // reset
+            Translate.inst_args = Map()
 
+            // Print amount of unnecessary proofs
             val rm_percentage = ((10000*n_proofs_rm.toFloat)/n_proofs_total).round.toFloat/100
             progress.echo(n_proofs_rm.toString + " proofs removed in theory " + theory_name +
                           " out of " + n_proofs_total.toString + " (" + rm_percentage.toString +
