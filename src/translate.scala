@@ -975,6 +975,13 @@ object Translate {
       } 
     }
   }
+
+  def dep_representative(cname: String): Option[String] = {
+    val deps = cdeps.getOrElse(cname,error(s"class $cname not registered!"))
+    val res = canon_map.get(deps)
+    if (res.isEmpty && deps.nonEmpty) error("invariant broken for read_class_deps")
+    res
+  }
   
   def get_cdeps(tm: Term.Term, Tyvar: String): Set[String] = tm match {
     case Term.OFCLASS(Term.TFree(Tyvar,_), c) =>
@@ -1159,15 +1166,19 @@ object Translate {
       case (List(tyvar),List(imp),s"${cname}_class$_") =>
         (bound_type_argument(tyvar, Term.OFCLASS(Term.TFree(tyvar),cname),imp),
           List(Some(imp), None))
-      case (_,_,s"${prefix}_inst${_}") =>
-        def error() = {
-          val progress = Console_Progress(verbose = true)
-          for ((name, _) <- inst_args) {
-            progress.echo("  FOUND FOR " + name)
-          }
-          isabelle.error("  NOT FOUND FOR " + prefix)
+      case (_,_,s"$mname.${cname}_${iname}_inst${_}") =>
+        //dep_representative cannot return None: if there is an instance, the class is not parameter-less
+        val key = dep_representative(s"$mname.$cname").get + "_" + iname
+        def badcase() = {
+          val msg1 = inst_args.foldLeft(s"  Could not find $key, known:\n")(
+            (msgp,ia) => s"$msgp  ${ia._1}\n"
+          )
+          val msg2 = canon_map.foldLeft(msg1 + "    canonical classes:\n")(
+            (msgp,cm) => s"$msgp    ${cm._2}\n"
+          )
+          error(msg2)
         }
-        inst_args.getOrElse(prefix, bound_type_arguments(typargs)(impl=impl))
+        inst_args.getOrElse(key, badcase()/*bound_type_arguments(typargs)(impl=impl)*/)
       case _ =>
         bound_type_arguments(typargs)(impl=impl)
     }

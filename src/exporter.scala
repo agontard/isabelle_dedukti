@@ -466,25 +466,30 @@ object Exporter {
             // class instances
             writer.nl()
             writer.comment("Class type instances")
-            def write_possible_instance(prefix: String, prop: Prop): Unit = if (prop.args.isEmpty) {
+            def write_possible_instance(prefix: String, cdeps: Set[String], iname: String, prop: Prop): Unit = if (prop.args.isEmpty) {
               def OfClassType(Ty: Typ, cname: String): Syntax.Typ =
                 Syntax.Appl(Syntax.Symb(Prelude.ref_class_type_ident(cname)),Translate.typ(Ty))
               @tailrec
               def wpi_rec(t: Term, acc:List[Syntax.Typ] = Nil): Unit = t match {
                 case App(App(Term.Const(Pure_Thy.IMP,_),OFCLASS(ty,cname)), rest) =>
-                  val deps = Translate.cdeps(cname)
-                  val updated = if (deps.isEmpty) acc else OfClassType(ty,Translate.canon_map(deps)) :: acc
+                  val updated = Translate.dep_representative(cname).map(OfClassType(ty,_)).toList ::: acc
                   wpi_rec(rest, updated)
-                case OFCLASS(ty,cname) =>
+                case OFCLASS(ty,conclclass) =>
                   val (args,impl) = Translate.bound_type_arguments(prop.typargs.map(_._1))
                   val cargsty = acc.reverse
                   val fullargs = args ::: cargsty.map(Syntax.BoundArg(None, _, implicit_arg = true))
                   val fullimpl = impl ::: cargsty.map(_ => None)
-                  Translate.inst_args += prefix -> (fullargs,fullimpl)
-                  if (Translate.cdeps(cname).nonEmpty) {
-                    val instty = args.foldRight(Syntax.arrows(cargsty, OfClassType(ty, cname)))(Syntax.Prod.apply)
+                  for {
+                    (deps,canonclass) <- Translate.canon_map
+                    if !Translate.inst_args.contains(s"${canonclass}_$iname") && deps.subsetOf(cdeps)
+                  } {
+                    progress.echo(s"instance of $canonclass for $iname ")
+                    Translate.inst_args += s"${canonclass}_$iname" -> (fullargs, fullimpl)
+                  }
+                  if (Translate.cdeps(conclclass).nonEmpty) {
+                    val instty = args.foldRight(Syntax.arrows(cargsty, OfClassType(ty, conclclass)))(Syntax.Prod.apply)
                     if (Translate.is_new_instance(instty)) {
-                      val name = Prelude.add_const_ident(prefix + "_type_instance", theory.name)
+                      val name = Prelude.add_const_ident(prefix + "_type_instance", theory_name)
                       val cmd = Syntax.DefableDecl(name, instty, inst = true)
                       writer.command(cmd, notations)
                     }
@@ -493,12 +498,25 @@ object Exporter {
               }
               wpi_rec(prop.term)
             }
-
+            
+            def get_deps_in(s: String): (Set[String],String) = {
+              def remake(l: List[String]): String = l.mkString("_")
+              @tailrec
+              def onlist(l: List[String], accs: Set[String] = Set(), accl: List[String] = Nil): (Set[String],String) =
+                if (l.isEmpty) (accs,remake(accl))
+                else Translate.cdeps.get(remake(l)) match {
+                  case Some(deps) =>
+                    onlist(accl, accs = accs.union(deps))
+                  case None =>
+                    onlist(l.take(l.length - 1), accl = l.last :: accl)
+                }
+              onlist(s.split("_").toList)
+            }
+            
             for (t <- theory.thms.sortWith(le)) t.name match {
-              case s"${prefix}_arity" =>
-                write_possible_instance(prefix,t.the_content.prop)
-              case s"$prefix.arity_$suffix" =>
-                write_possible_instance(s"$prefix.$suffix",t.the_content.prop)
+              case s"$mname.arity_$rest" =>
+                val (deps,iname) = get_deps_in(rest)
+                write_possible_instance(s"$mname.$rest",deps,iname,t.the_content.prop)
               case _ =>
             }
             // write declarations related to undefined classes
