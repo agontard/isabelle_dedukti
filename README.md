@@ -2,7 +2,7 @@
 
 ## Dependencies
 
-* [Isabelle2025](https://isabelle.in.tum.de/website-Isabelle2025/dist/Isabelle2025_linux.tar.gz)
+* [Isabelle2025-2](https://isabelle.in.tum.de/website-Isabelle2025-2/)
 
 * one dk file checker among:
 
@@ -18,14 +18,14 @@
 
   * **Isabelle**
 
-      - Download [Isabelle2025](https://isabelle.in.tum.de/website-Isabelle2025/dist/Isabelle2025_linux.tar.gz)
+      - Download [Isabelle2025-2](https://isabelle.in.tum.de/website-Isabelle2025-2/dist/Isabelle2025_linux.tar.gz)
 
-      - Unpack and run `Isabelle2025/bin/isabelle jedit` at least
+      - Unpack and run `Isabelle2025-2/bin/isabelle jedit` at least
         once, to ensure that everything works (e.g. see Documentation
         panel with Examples).
 
       - In the following, the command-line executable `isabelle` is used
-        instead of the full `Isabelle2025/bin/isabelle`. To be able to use the short version one can:
+        instead of the full `Isabelle2025-2/bin/isabelle`. To be able to use the short version one can:
 
           + insert the absolute path of the Isabelle `bin`
             directory in `$PATH` ([how to add directories to the $PATH variable](https://gist.github.com/nex3/c395b2f8fd4b02068be37c961301caa7))
@@ -116,7 +116,7 @@ isabelle build -b -d$root_file_dir $session
 
 This also builds any parent session that has not been built yet.
 
-Remark: to visualize theory dependencies in HOL, you can look at the [dependency graph of the HOL session](https://isabelle.in.tum.de/website-Isabelle2025/dist/library/HOL/HOL/session_graph.pdf).
+Remark: to visualize theory dependencies in HOL, you can look at the [dependency graph of the HOL session](https://isabelle.in.tum.de/website-Isabelle2025-2/dist/library/HOL/HOL/session_graph.pdf).
 
 ## Command to translate Isabelle proofs to Dedukti
 
