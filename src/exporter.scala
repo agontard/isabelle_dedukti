@@ -156,6 +156,7 @@ object Exporter {
     to_lp: Boolean = true,
     use_notations: Boolean = true,
     eta_expand: Boolean = false,
+    with_class_types: Boolean = false,
     verbose: Boolean = false,
     outdir: String = "",
   ): Unit = {
@@ -299,7 +300,7 @@ object Exporter {
         def update_useless_proofs(name: String, proof: Term.Proof, args: List[String]): Unit = (proof,args) match {
           case (PThm(serial, origin_theory, thm_name, _),Nil) if thm_name.is_empty &&
             origin_theory == theory_name & !Translate.replace_serial.contains(serial) =>
-            Translate.replace_serial += serial -> name
+            Translate.replace_serial += serial -> (name,Export_Theory.Kind.THM)
             val (next_proof,next_args) = use_proof(theory_name, serial) {
               case (prf, prop) => (prf, prop.args.map(_._1).reverse)
             }
@@ -320,14 +321,15 @@ object Exporter {
           if (verbose) progress.echo("  "+a.toString+" "+a.serial)
           Translate.const_decl(theory_name, a.name, a.the_content.typargs, a.the_content.typ, None, No_Syntax)
         }
+        Translate.read_class_deps(theory)
         for (a <- theory.axioms) {
           if (verbose) progress.echo("  "+a.toString+" "+a.serial)
-          Translate.stmt_decl(Prelude.add_axiom_ident(a.name, theory_name), a.the_content.prop, None)
+          Translate.stmt_decl(Prelude.add_axiom_ident(a.name, theory_name), a.the_content.prop, None, a.name)
         }
         for (a <- theory.thms) {
           if (verbose) progress.echo("  " + a.toString + " " + a.serial)
           val thm = a.the_content
-          Translate.stmt_decl(Prelude.add_thm_ident(a.name, theory_name), thm.prop, None)
+          Translate.stmt_decl(Prelude.add_thm_ident(a.name, theory_name), thm.prop, None, a.name)
           update_useless_proofs(a.name, thm.proof, thm.prop.args.map(_._1).reverse)
         }
         progress.echo("End reading theory "+theory_name)
@@ -438,15 +440,114 @@ object Exporter {
             }
             // ordering on entities
             def le[A<:Content[A]](e1:Entity[A], e2:Entity[A]) = e1.serial <= e2.serial
+            // read class dependencies
+            Translate.read_class_deps(theory)
+            // write class predicates and their relations
+            writer.nl()
+            writer.comment("Class predicates")
+
+            for ((_,c) <- Translate.canon_map if theory.classes.exists(tc => Prelude.unqualify(tc.name) == c)) {
+              val cmd = Translate.class_pred_decl(theory_name, c)
+              writer.command(cmd, notations)
+            }
+            
+            // Dependencies
+            writer.nl()
+            writer.comment("Class relations")
+            for {
+              (deps1,cname1) <- Translate.canon_map
+              (deps2,cname2) <- Translate.canon_map
+              if cname1 != cname2
+              if theory.classrel.exists{
+                case Classrel(c1,c2,_) =>
+                  val uq = Prelude.unqualify
+                  Translate.cdeps(uq(c1)) == deps1 &&
+                  Translate.cdeps(uq(c2)) == deps2
+              }
+              /*if is_new_class(cname1) || is_new_class(cname2)
+              if deps2.subsetOf(deps1)*/
+            } {
+              if (verbose) progress.echo("  " + cname1 + " -> " + cname2)
+              val cmd = Translate.classrel_decl(theory_name, cname1, cname2)
+              writer.command(cmd, notations)
+            }
+            
+            // (Optional) Class types
+            if (with_class_types) {
+              writer.nl()
+              writer.comment("Class types")
+              for (c <- theory.classes if Translate.cdeps(Prelude.unqualify(c.name)).nonEmpty) {
+                if (verbose) progress.echo("  type for class " + c.name)
+                Translate.class_type_decl(theory_name, c.name).foreach(writer.command(_, notations))
+              }
+            }
+            
+            // class instances
+            writer.nl()
+            writer.comment("Class predicate instances")
+            /*def write_possible_instance(prefix: String, prop: Prop): Unit = if (prop.args.isEmpty) {
+              def OfClassType(Ty: Typ, cname: String): Syntax.Typ =
+                Syntax.Appl(Syntax.Symb(Prelude.ref_class_type_ident(Translate.unqualify(cname))),Translate.typ(Ty))
+              @tailrec
+              def wpi_rec(t: Term, acc:List[Syntax.Typ] = Nil): Unit = t match {
+                case App(App(Term.Const(Pure_Thy.IMP,_),OFCLASS(ty,cname)), rest) =>
+                  val updated = Translate.dep_representative(cname).map(OfClassType(ty,_)).toList ::: acc
+                  wpi_rec(rest, updated)
+                case OFCLASS(ty,conclclass) =>
+                  val (args,impl) = Translate.bound_type_arguments(prop.typargs)
+                  val cargsty = acc.reverse
+                  val fullargs = args ::: cargsty.map(Syntax.BoundArg(None, _, implicit_arg = true))
+                  val fullimpl = impl ::: cargsty.map(_ => None)
+                  if (Translate.cdeps(Translate.unqualify(conclclass)).nonEmpty) {
+                    val instty = args.foldRight(Syntax.arrows(cargsty, OfClassType(ty, conclclass)))(Syntax.Prod.apply)
+                    if (Translate.is_new_instance(instty)) {
+                      val name = Prelude.add_const_ident(prefix + "_type_instance", theory_name)
+                      val cmd = Syntax.DefableDecl(name, instty, inst = true)
+                      writer.command(cmd, notations)
+                    }
+                  }
+                case _ =>
+              }
+              wpi_rec(prop.term)
+            }
+            
+            for (t <- theory.thms.sortWith(le)) t.name match {
+              case s"$mname.arity_$rest" =>
+                write_possible_instance(s"$mname.$rest",t.the_content.prop)
+              case _ =>
+            }*/
+            
+            for (a <- theory.arities) {
+              val (bound_args: List[Syntax.BoundArg],_) = Translate.bound_type_arguments(a.prop.typargs)
+              a.prop.term match {
+                case OFCLASS(ty,c) =>
+                  for (cname <- Translate.dep_representative(c) if Translate.new_instance (a.type_name, cname)) {
+                    val cut_cname = cname.split("[.]", 2)
+                    val uq_cname = if (cut_cname.length == 1) cut_cname(0) else cut_cname(1)
+                    val name = Prelude.add_const_ident(s"${a.type_name}_${uq_cname}_pred_instance", theory_name)
+                    val concl = Syntax.Appl(Syntax.Symb(Prelude.ref_class_pred_ident(cname)), Translate.typ(ty))
+                    val full_type = bound_args.foldRight(concl)(Syntax.Prod.apply)
+                    val cmd = Syntax.DefableDecl(name, full_type, inst = true)
+                    writer.command(cmd, notations)
+                  }
+                case t => error("Inappropriate arity conclusion: " + t.toString)
+              }
+            }
+            Translate.current_arities = theory.arities
+            
             // write declarations related to undefined classes
             if (verbose) progress.echo("Undefined classes")
             writer.nl()
             writer.comment("Undefined classes")
             for (a <- theory.classes.sortWith(le)) {
               if (!(map_cst_dfn contains (a.name+"_class"))) {
-                  if (verbose) progress.echo("  "+a.toString+" "+a.serial)
-                  val cmd = Translate.class_decl(theory_name, a.name, None)
-                  writer.command(cmd,notations)
+                if (verbose) progress.echo("  "+a.toString+" "+a.serial)
+                val cmd = Translate.class_decl(theory_name, a.name, None)
+                writer.command(cmd,notations)
+                if (with_class_types && Translate.cdeps(Prelude.unqualify(a.name)).nonEmpty) {
+                  val other_cmd = Translate.class_type_definition(theory_name, a.name)
+                  writer.command(other_cmd,notations)
+                }
               }
             }
             // write declarations related to undefined constants
@@ -456,10 +557,40 @@ object Exporter {
               // skip constants corresponding to classes
               if (!c.name.endsWith("_class") && !map_cst_dfn.contains(c.name)) {
                 if (verbose) progress.echo("  " + c.toString + " " + c.serial)
-                val cmd = Translate.const_decl(theory_name, c.name, c.the_content.typargs, c.the_content.typ, None, c.the_content.syntax)
+                val cst = c.the_content
+                val rhs = c.name match {
+                  case s"${cname}_class.$rest" =>
+                    Translate.add_cst(cname, c.name)
+                    val altname = c.name + "_alt"
+                    val firstcmd = Translate.const_decl(theory_name, altname, cst.typargs, cst.typ, None, No_Syntax, ignore_classes = true)
+                    writer.command(firstcmd,notations)
+                    val t = Term.Const(altname,cst.typargs.map(TFree.apply))
+                    /*if (with_class_types) {
+                      val secondcmd = Translate.const_of_class_type_decl(theory_name, cname, c.name, cst.typargs, cst.typ, t)
+                      writer.command(secondcmd,notations)
+                    }*/
+                    Some(t)
+                  case _ =>
+                    None
+                }
+                val cmd = Translate.const_decl(theory_name, c.name, cst.typargs, cst.typ, rhs, cst.syntax)
                 writer.command(cmd, notations)
               }
             }
+            /* // rules for constants
+            writer.nl()
+            writer.comment("Unify instances of typeclass constants")
+            for {
+              rel <- theory.classrel
+              c <- Translate.cstdeps(rel.class1, rel.class2) if c._2 != rel.class2
+            } {
+              if (verbose) progress.echo(s"  unify ${c._1} for ${rel.class1} and ${rel.class2}")
+              val cofc2 = Prelude.ref_class_dep_ident(c._2,rel.class2)
+              val c2ofc1 = Prelude.ref_class_dep_ident(rel.class2,rel.class1)
+              val cofc1 = Prelude.ref_class_dep_ident(c._2,rel.class1)
+              val cmd = s"rule @${c._1} $$A ($cofc2 $$A ($c2ofc1 $$A $$W)) ↪ @${c._1} $$A ($cofc1 $$A $$W);\n"
+              writer.write(cmd)
+            } */
             // write declarations related to defined constants
             writer.nl()
             writer.comment("Defined constants")
@@ -470,8 +601,18 @@ object Exporter {
                   case None =>
                   case Some(dfn) =>
                     if (verbose) progress.echo("  " + c.toString + " " + c.serial)
-                    val cmd = Translate.const_decl(theory_name, c.name, c.the_content.typargs, c.the_content.typ, Some(dfn), c.the_content.syntax)
+                    val cst = c.the_content
+                    val cmd = Translate.const_decl(theory_name, c.name, cst.typargs, cst.typ, Some(dfn), cst.syntax)
                     writer.command(cmd, notations)
+                    if (with_class_types) {
+                      c.name match {
+                        case s"${cname}_class.$rest" =>
+                          val t = Term.Const(c.name, cst.typargs.map(TFree.apply))
+                          val other_cmd = Translate.const_of_class_type_decl(theory_name, cname, c.name, cst.typargs, cst.typ, t)
+                          writer.command(other_cmd,notations)
+                        case _ =>
+                      }
+                    }
                 }
               }
             }
@@ -485,6 +626,10 @@ object Exporter {
                   if (verbose) progress.echo("  "+a.toString+" "+a.serial+" := "+d.toString)
                   val cmd = Translate.class_decl(theory_name, a.name, Some(d))
                   writer.command(cmd,notations)
+                  if (with_class_types && Translate.cdeps(Prelude.unqualify(a.name)).nonEmpty) {
+                    val other_cmd = Translate.class_type_definition(theory_name, a.name)
+                    writer.command(other_cmd,notations)
+                  }
                 case None =>
               }
             }
@@ -494,7 +639,7 @@ object Exporter {
             for (a <- theory.axioms.sortWith(le)) {
               if (!map_axm_eqtyp.contains(a.name)) {
                 if (verbose) progress.echo("  " + a.toString + " " + a.serial)
-                val cmd = Translate.stmt_decl(Prelude.add_axiom_ident(a.name, theory_name), a.the_content.prop, None)
+                val cmd = Translate.stmt_decl(Prelude.add_axiom_ident(a.name, theory_name), a.the_content.prop, None, a.name)
                 writer.command(cmd, notations)
               }
             }
@@ -509,14 +654,19 @@ object Exporter {
                   val p = a.the_content.prop
                   val prf = Appt(PAxm("Pure.reflexive",eqtys),lhs)
                   //println("proof of "+a.name+": "+prf.toString)
-                  val cmd = Translate.stmt_decl(Prelude.add_axiom_ident(a.name,theory_name), a.the_content.prop, Some(prf))
+                  val aname = Prelude.add_axiom_ident(a.name,theory_name)
+                  val original_name = lhs match {
+                    case Term.Const(name,_) =>
+                      name
+                    case _ => a.name
+                  }
+                  val cmd = Translate.stmt_decl(aname, a.the_content.prop, Some(prf), original_name)
                   writer.command(cmd,notations)
               }
             }
 
             /** count the proofs that are removed */
             var n_proofs_rm: Int = 0
-            var n_proofs_total: Int = 0
 
             /** function writing a declaration related to a theorem
              *
@@ -524,10 +674,33 @@ object Exporter {
              *  @param prop the proposition proved by the theorem
              *  @param proof the proof of the theorem */
             def decl_thm(name: String, prop: Prop, proof: Term.Proof): Unit = {
-              n_proofs_total += 1
               if (verbose) progress.echo("  "+ name)
-              val cmd = Translate.stmt_decl(Prelude.add_thm_ident(name,theory_name), prop, Some(proof))
+              val cmd = Translate.stmt_decl(Prelude.add_thm_ident(name,theory_name), prop, Some(proof), name)
               writer.command(cmd, notations)
+              if (with_class_types) {
+                val thm_ref: Term.Proof = PThm(0, theory_name, Thm_Name(name, 0), prop.typargs.map(TFree.apply))
+                val pre_proof = prop.args.foldLeft(thm_ref) { case (prf, (v, ty)) => Appt(prf, Free(v, ty)) }
+                @tailrec
+                def get_sorts(t : Term.Term, map: Map[String,String] = Map(), prf: Term.Proof = pre_proof,
+                              init_state: Boolean = true): Option[(Map[String,String], Term.Term, Term.Proof)] = t match {
+                  case (App(App(Term.Const(Pure_Thy.IMP, _), OFCLASS(T @ TFree(tvar, _), cname)), concl))
+                    if Translate.cdeps(Prelude.unqualify(cname)).nonEmpty =>
+                    map.get(tvar) match {
+                      case None =>
+                        val uqcname = Prelude.unqualify(cname)
+                        val new_proof = AppP(prf, PThm(0, theory_name, Thm_Name(uqcname + "_class_type_def", 0), List(T)))
+                        get_sorts(concl, map + (tvar -> uqcname), new_proof, false)
+                      case _ => None
+                    }
+                  case _ =>
+                    if (init_state) None else Some(map, t, prf)
+                }
+                for ((sortmap, rest, prf) <- get_sorts(prop.term)) {
+                  if (verbose) progress.echo(s"  ${name}_alt")
+                   val other_cmd = Translate.stmt_of_class_type_decl(theory_name, name, sortmap, prop.copy(term = rest), prf)
+                  writer.command(other_cmd, notations)
+                }
+              }
             }
 
             /** map proof serial -> replacement.
@@ -535,6 +708,16 @@ object Exporter {
              * and <code>None</code> if it is to be erased. */
             var replace_serial: Map[Long, Option[String]] = Map()
 
+            @tailrec
+            def get_call(proof: Term.Proof,args: List[String]): Option[PThm] = (proof,args) match {
+              case (thm : PThm,Nil) =>
+                Some(thm)
+              case (Appt(proofrem, arg), argname::argsrem) if is_abstract_free(arg,argname) =>
+                get_call(proofrem,argsrem)
+              case _ =>
+                None
+            }
+            
             /** In $isa, Some theorem proofs are a reference to an unnamed lemma proving the exact same
              * statement. This function recursively inspects the proof of a theorem to delete all such useless lemmas
              * by updating the replace_serial map
@@ -552,21 +735,21 @@ object Exporter {
              */
             @tailrec
             def remove_useless_proofs(name: String, proof: Term.Proof, args: List[String],
-                                      encountered_lemmas: List[Long] = Nil): Boolean = (proof,args) match {
-              case (PThm(serial, origin_theory, thm_name, _),Nil) if thm_name.is_empty &&
+                                      encountered_lemmas: List[Long] = Nil): Boolean = get_call(proof,args) match {
+              case Some(PThm(serial, origin_theory, thm_name, _)) if thm_name.is_empty &&
                 origin_theory == theory_name && !Translate.replace_serial.contains(serial) =>
-                Translate.replace_serial += serial -> name
+                n_proofs_rm += 1
+                Translate.replace_serial += serial -> (name,Export_Theory.Kind.THM)
                 // otherwise scala does not recognise tail recursiveness
                 val (next_proof,next_args) = use_proof(theory_name, serial) {
                   case (prf, prop) => (prf, prop.args.map(_._1).reverse)
                 }
                 remove_useless_proofs(name, next_proof, next_args, serial :: encountered_lemmas)
-              case (Appt(proofrem, arg), argname::argsrem) if is_abstract_free(arg,argname) =>
-                remove_useless_proofs(name, proofrem, argsrem, encountered_lemmas)
               case _ =>
                 encountered_lemmas match {
                   case final_lemma :: remainder =>
                     replace_serial += final_lemma -> Some(name)
+                    if (verbose) progress.echo(s"$name went down to $final_lemma")
                     for (lemma <- remainder) replace_serial += lemma -> None
                     false
                   case _ => true
@@ -576,19 +759,28 @@ object Exporter {
             /** function writing the declaration of a lemma for an intermediary proof */
             def write_proof(prf: Long): Unit = {
               replace_serial.get(prf) match {
-                case Some(Some(thm_name)) => n_proofs_rm += 1
+                case Some(Some(thm_name)) =>
                   use_proof(theory_name,prf){
-                  case (proof,prop) => decl_thm(thm_name,prop,proof)
-                }
+                    case (proof,prop) => decl_thm(thm_name,prop,proof)
+                  }
                 case Some(None) =>
-                  n_proofs_rm += 1
-                  n_proofs_total += 1
                   if (verbose) progress.echo("  ignoring proof" + prf)
                 case _ =>
-                  n_proofs_total += 1
                   if (verbose) progress.echo("  proof " + prf)
-                  val cmd = decl_proof(prf, theory_name)
-                  writer.command(cmd, notations)
+                  use_proof(theory_name,prf){
+                    case (proof,prop) => get_call(proof,prop.args.map(_._1).reverse) match {
+                      case Some(PThm(serial,_,thm_name,_)) =>
+                        n_proofs_rm += 1
+                        val new_mapping = {
+                          if (!thm_name.is_empty) (thm_name.name,Export_Theory.Kind.THM)
+                          else Translate.replace_serial.getOrElse(serial,(f"proof_$serial", ""))
+                        }
+                        Translate.replace_serial += prf -> new_mapping
+                      case _ =>
+                        val cmd = Translate.stmt_decl(Prelude.ref_proof_ident(prf),prop,Some(proof))
+                        writer.command(cmd, notations)
+                    }
+                  }
               }
             }
             
@@ -634,18 +826,43 @@ object Exporter {
             val prfs = map_theory_proofs(theory_name).toList
 
             /** remove all useless lemmas and keep the theorems that did not replace a lemma */
-            val thms = for ( thm <- theory.thms if remove_useless_proofs(thm.name,
+            val thms = for ( thm <- theory.thms.sortWith(le) if remove_useless_proofs(thm.name,
                                thm.the_content.proof, thm.the_content.prop.args.map(_._1).reverse) )
               yield thm
 
             write_proofs(prfs,thms)
             progress.echo("End writing "+mod_name_theory+extension)
-
+            
+            // Print amount of unnecessary proofs
+            val n_proofs_total = prfs.length + theory.thms.length
             val rm_percentage = ((10000*n_proofs_rm.toFloat)/n_proofs_total).round.toFloat/100
             progress.echo(n_proofs_rm.toString + " proofs removed in theory " + theory_name +
                           " out of " + n_proofs_total.toString + " (" + rm_percentage.toString +
                           "%)")
           }
+          /*
+          val map_file_name = theory_name + extension + "classdeps"
+          val map_file = Path.explode(outdir + map_file_name)
+          progress.echo("Start writing " + map_file_name)
+          using(new Map_Writer(map_file)) { mapwriter =>
+            /** Maps existing sets of Isabelle class dependencies to the first class with these dependencies */
+            var cobjsmixinname: Map[Set[String], String] = Map()
+            for (class_name <- Translate.allclasses) {
+              val class_deps = Translate.cdeps(class_name)
+              if (class_deps.isEmpty) mapwriter.write_class_parent(class_name, "Type'")
+              else cobjsmixinname.get(class_deps) match {
+                case None =>
+                  cobjsmixinname += (class_deps -> class_name)
+                  if (theory.classes.exists(isaclass => Prelude.ref_class_ident(isaclass.name) == class_name))
+                    mapwriter.write_class_def(class_name, class_deps.toList)
+                  else
+                    mapwriter.write_class_parent(class_name, class_name)
+                case Some(parent) =>
+                  mapwriter.write_class_parent(class_name, parent)
+              }
+            }
+          }
+          progress.echo("End writing " + theory_name + ".classdeps") */
           progress.echo("End reading theory "+theory_name)
         }
         mk.close()

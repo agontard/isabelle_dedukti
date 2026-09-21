@@ -48,7 +48,14 @@ object Prelude {
 
   // An Isabelle object can be uniquely identified from its id (module
   // name dot name) and its kind (class, type, const, etc.).
-  
+
+  /**
+   * Unqualifies an identifier
+   * @param qid the (possibly qualified) identifier
+   * @return its longest suffix which does not contain a '.'
+   */
+  def unqualify(qid:String): String = qid.split('.').last
+
   /**
    * Making an $isa object name unique by specifying its kind.
    * @param id the qualified identifier of the object (modulename.name)
@@ -142,10 +149,25 @@ object Prelude {
    * <$metc><u>[[add_name]]</u><$metce>(<$argc>a<$argce>+<$str>"_class"<$stre>, <$str>"const"<$stre>, <$argc>module<$argce>)</pre></code>
    */
   def add_class_ident(a: String, module: String): String = add_name(a+"_class", Export_Theory.Kind.CONST, module)
+  /** <pre><code><$metc>add_class_pred_ident<$metce>(<$argc>a<$argce>, <$argc>module<$argce>) =
+   * <$metc><u>[[add_name]]</u><$metce>(<$argc>a<$argce>+<$str>"_class_pred"<$stre>, <$str>"type"<$stre>, <$argc>module<$argce>)</pre></code>
+   */
+  def add_class_pred_ident(a: String, module: String): String = add_name(a + "_class_pred", Export_Theory.Kind.TYPE, module)
+  def add_class_type_ident(a: String, module: String): String = add_name(a + "_class_type", Export_Theory.Kind.TYPE, module)
   /** <pre><code><$metc>add_type_ident<$metce>(<$argc>a<$argce>, <$argc>module<$argce>) =
    * <$metc><u>[[add_name]]</u><$metce>(<$argc>a<$argce>, <$str>"type"<$stre>, <$argc>module<$argce>)</pre></code>
    */
   def add_type_ident(a: String, module: String): String = add_name(a, Export_Theory.Kind.TYPE, module)
+  def add_subtype_ident(a: String, b: String, module: String): String = add_name(s"${b}_of_${a}", Export_Theory.Kind.CONST, module)
+  /** Adds a new dependency instance name for two $isa classes
+   *
+   * @param c1 the name of the first class
+   * @param c2 the name of the second class
+   * @param module the current $dklp module
+   * @return the added name
+   * @see <$met><u>[[add_name]]</u><$mete>
+   */
+  def add_class_dep_ident(c1: String, c2: String, module: String): String = add_subtype_ident(ref_class_pred_ident(c1),ref_class_pred_ident(c2),module)
   /** <pre><code><$metc>add_const_ident<$metce>(<$argc>a<$argce>, <$argc>module<$argce>) =
    * <$metc><u>[[add_name]]</u><$metce>(<$argc>a<$argce>, <$str>"const"<$stre>, <$argc>module<$argce>)</pre></code>
    */
@@ -168,6 +190,24 @@ object Prelude {
    * @return The translated name of the object <$arg>a<$arge>_class of kind const
    */
   def ref_class_ident(a: String): String = get_name(a+"_class", Export_Theory.Kind.CONST)
+  /** The name of an $isa class's type
+   *
+   * @param a the unqualified name of the class
+   * @return The translated name of the object <$arg>a<$arge>_class_pred of kind type
+   */
+  def ref_class_pred_ident(a: String): String = get_name(a + "_class_pred", Export_Theory.Kind.TYPE)
+  def ref_class_type_ident(a: String): String = get_name(a + "_class_type", Export_Theory.Kind.TYPE)
+  /** The name of two $isa class's dependency instance
+   *
+   * @param c1 the name of an $isa class
+   * @param c2 the name of a subclass of <$arg>c1<$arge>
+   * @return The translated name of the object <$arg>a<$arge>_class_pred of kind type
+   */
+  def ref_class_dep_ident(c1: String, c2: String): String = {
+    val cc1 = ref_class_pred_ident(c1)
+    val cc2 = ref_class_pred_ident(c2)
+    get_name(s"${cc1}_of_${cc2}", Export_Theory.Kind.CONST)
+  }
   /** The translated name of an $isa type
    *
    * @param a the name of the type
@@ -309,9 +349,20 @@ object Translate {
 
   /* binders */
   
-  def bound_type_argument(name: String, impl: Boolean = false): Syntax.BoundArg =
-    Syntax.BoundArg(Some(var_ident(name)), typeT, impl)
-  
+  def bound_type_argument(typ : (String, Term.Sort), tm: Term.Term=Term.dummy, impl: Boolean = false): List[Syntax.BoundArg] = typ match {
+    case (name,s) =>
+      val typarg = Syntax.BoundArg(Some(var_ident(name)), typeT, impl)
+      val cname = {
+        val c1 = class_of_sort(s)
+        if (c1.isDefined) c1 else get_class(tm, name)
+      }
+      val carg = cname.toList.map { cn =>
+        val ty = Syntax.Appl (Syntax.Symb (ref_class_pred_ident (cn) ), Syntax.Var (var_ident (name) ) )
+        Syntax.BoundArg (None, ty, true)
+      }
+      typarg :: carg
+  }
+
   def bound_term_argument(name: String, ty: Term.Typ, impl: Boolean = false): Syntax.BoundArg =
     Syntax.BoundArg(Some(var_ident(name)), eta(typ(ty)), impl)
 
@@ -368,16 +419,17 @@ object Translate {
    */
   def eta(ty: Syntax.Term): Syntax.Typ = Syntax.Appl(etaT, ty)
 
-  /** Translates an $isa term to a $dklp one 
+  /** Translates an $isa term to a $dklp one
    *
    * @param tm the $isa term to translate
    * @param bounds the context of bound variables and their de Bruijn indices
    * @return the corresponding $dklp term
    */
-  def term(tm: Term.Term, bounds: Bounds): Syntax.Term =
+  def term(tm: Term.Term, bounds: Bounds, class_replacement : Boolean = false): Syntax.Term =
     tm match {
       case Term.Const(c, typargs) =>
-        val id_c = ref_const_ident(c)
+        val id_c_raw = if (class_replacement && c.contains("_class.")) c + "_alt" else c
+        val id_c = ref_const_ident(id_c_raw)
         val impl = implArgsMap.getOrElse(id_c,Nil)
         Syntax.appls(Syntax.Symb(id_c), typargs.map(typ), impl)
       case Term.Free(x, _) =>
@@ -387,24 +439,26 @@ object Translate {
         try Syntax.Var(var_ident(bounds.get_trm(i)))
         catch { case _: IndexOutOfBoundsException => isabelle.error("Loose bound variable " + i) }
       case Term.Abs(x, ty, b) =>
-        Syntax.Abst(bound_term_argument(x, ty), term(b, bounds.add_trm(x)))
+        Syntax.Abst(bound_term_argument(x, ty), term(b, bounds.add_trm(x), class_replacement))
       case Term.OFCLASS(t, c) =>
-        Syntax.Appl(Syntax.Symb(ref_class_ident(c)), typ(t))
+        Syntax.Appl(Syntax.Symb(ref_class_ident(Prelude.unqualify(c))), typ(t))
       case Term.App(a, b) =>
-        Syntax.Appl(term(a, bounds), term(b, bounds))
+        Syntax.Appl(term(a, bounds, class_replacement), term(b, bounds, class_replacement))
     }
 
   /** Function mapping a $dklp simple type proposition to the type of its proofs.
    *
-   * @param tm a $dklp term, which must be of type <$lpc>prop<$lpce>
+   * @param tm a $dklp term, which must be of type <$lpc>El prop<$lpce>
    *           in order for the output to be typable.
    * @return the type <$lpc>Prf tm<$lpce> of proofs of <$arg>tm<$arge>
    */
   def eps(tm: Syntax.Term): Syntax.Term =
     Syntax.Appl(epsT, tm)
 
-  /** map to replace calls to useless unnamed proofs with theorem/lemma calls */
-  var replace_serial: Map[Long,String] = Map()
+  /** map to replace calls to useless unnamed proofs with theorem/lemma calls.
+   *  Stores both the name and the kind of the object to replace with, to be
+   *  fed to <$met><u>[[get_name]]</u><$mete>*/
+  var replace_serial: Map[Long,(String,String)] = Map()
   /** Translates an $isa proof to a $dklp term
    *
    * @param prf the $isa proof to translate
@@ -443,7 +497,7 @@ object Translate {
       case thm: Term.PThm =>
         val head = if (!thm.thm_name.is_empty) ref_thm_ident(thm.thm_name.name)
           else replace_serial.get(thm.serial) match {
-            case Some(name) => ref_thm_ident(name)
+            case Some((name,kind)) => get_name(name,kind)
             case _ =>
               if (namesMap contains full_name("proof_"+thm.serial.toString, "")) ref_proof_ident(thm.serial)
               else {
@@ -468,6 +522,7 @@ object Translate {
   def lambda_contains(term: Syntax.Term, ident: Syntax.Ident): Boolean =
     term match {
       case Syntax.TYPE => false
+      case Syntax.Wildcard => false
       case Syntax.Symb(id) => id == ident
       case Syntax.Var(id)  => id == ident
       case Syntax.Appl(t1, t2, _) => lambda_contains(t1, ident) || lambda_contains(t2, ident)
@@ -487,6 +542,7 @@ object Translate {
   def lambda_replace(tm: Syntax.Term, ident: Syntax.Ident, value: Syntax.Term): Syntax.Term =
     tm match {
       case Syntax.TYPE => tm
+      case Syntax.Wildcard => tm
       case Syntax.Symb(id) => if (id == ident) value else tm
       case Syntax.Var(id) => if (id == ident) value else tm
       case Syntax.Appl(t1, t2, b) => Syntax.Appl(lambda_replace(t1, ident, value), lambda_replace(t2, ident, value), b)
@@ -579,7 +635,7 @@ object Translate {
       }
     }
 
-  /** Create and name new arguments to a $dklp function when
+ /** Create and name new arguments to a $dklp function when
    *  they do not already exist (partially applied function)
    *  
    * @param known_argnames the names given to the arguments in the type/proposition
@@ -713,6 +769,9 @@ object Translate {
       case Syntax.TYPE =>
         tm
 
+      case Syntax.Wildcard =>
+        tm
+
       case Syntax.Symb(_) | Syntax.Var(_) | Syntax.Appl(_, _, _) =>
         eta_expand_appl(tm, ctxt, name_ref)
 
@@ -773,7 +832,7 @@ object Translate {
       case _ => (Nil, tm, ty)
   }
 
-  /** Pop all product arguments and return their list and the remaining term 
+  /** Pop all product arguments and return their list and the remaining term
    * 
    * @param ty the $dklp type to split
    * @return <code><$metc>fetch_head_args_type<$metce>(<$lpc>Π x1 ... xn, T<$lpce>) =
@@ -804,7 +863,7 @@ object Translate {
 
   // Make sure that there are no two notations with the same op string
   // You can edit them here (eg. replace ≡ with ⩵ or _ with __ to avoid their escaping)
-  /** Get the $isa symbol for a notation, then change it if needed (to avoid conflicts with $dkpl)
+  /** Get the $isa symbol for a notation, then change it if needed (to avoid conflicts with $dklp)
    * and make sure it is unique.<br><br>
    * <b>Note: not so sure, is what I can guess from the isabelle code. My best guess is that it's just
    * decoding the notation string so the object name does not appear here, just two encodings of
@@ -835,9 +894,225 @@ object Translate {
     case _ => error("oops")
   }
 
-  var implArgsMap: Map[String, List[Boolean]] = Map()
+  var implArgsMap: Map[String, List[Option[Boolean]]] = Map()
 
   /* type classes */
+
+  /** Maps $isa classes to all their constants */
+  var ccsts: mutable.Map[String, Set[String]] = mutable.Map()
+
+  /** Registers an $isa typeclass constant by updating variable <code>Translate.ccsts</code>
+   *
+   * @param cname the class's name
+   * @param cstname the constant's name
+   */
+  def add_cst(cname: String, cstname: String): Unit = {
+    val uqcname = Prelude.unqualify(cname)
+    if (ccsts.contains(uqcname)) ccsts(uqcname) += cstname
+    else ccsts += uqcname -> Set(cstname)
+  }
+
+  /** Maps $isa classes to all their dependencies which have new constants
+   * (including possibly themselves) */
+  var cdeps: mutable.Map[String, Set[String]] = mutable.Map()
+  
+  /** Maps sets of <code>cdeps</code> to a canonical $isa class having these deps */
+  var canon_map: Map[Set[String], String] = Map()
+  
+  /** Known translations of $isa typeclass dependencies */
+  var known_instances: Set[Syntax.Typ] = Set()
+  
+  def is_new_instance(ty: Syntax.Typ): Boolean = {
+    val res = !known_instances.contains(ty)
+    if (res) known_instances += ty
+    res
+  }
+
+/*  def cstdeps(class1: String, class2: String): Set[(String,String)] =
+    (cdeps(class1) & cdeps(class2)).flatMap{ dep =>
+      ccsts(dep).map((_,dep))
+    }*/
+
+  /** Computes the $isa class with the most constants
+   *
+   * @param c1 the name of the first $isa class
+   * @param c2 the name of the second $isa class
+   * @return <$arg>c1<$arge> if <code>cdeps(<$argc>c1<$argce>)</code> is a subset of
+   *         <code>cdeps(<$argc>c2<$argce>)</code>, <$arg>c2<$arge> if
+   *         <code>cdeps(<$argc>c2<$argce>)</code> is a strict subset of
+   *         <code>cdeps(<$argc>c1<$argce>)</code>, and raises an error if they are
+   *         uncomparable or if <$arg>c1<$arge> or <$arg>c2<$arge> is not a typeclass
+   */
+  def class_max(c1: String, c2: String, context: Option[Term.Term] = None): String = {
+    def withdeps[A](c: String)(f: Set[String] => A) = {
+      cdeps.get(c) match {
+        case Some(s) => f(s)
+        case _ => error("unrecognized class: " + c + "\nClasses known:\n" +
+          cdeps.foldLeft("")((_ + _._1 + "\n")))
+      }
+    }
+
+    withdeps(c1) { deps1 =>
+      withdeps(c2) { deps2 =>
+        val union = deps1 | deps2
+        if (union == deps1) c1 else if (union == deps2) c2 else {
+          val errormsgpt2 = context.fold("")(Ctxt => s"\nPrinting problematic term: $Ctxt")
+          error(s"uncomparable classes: $c1 and $c2$errormsgpt2")
+        }
+      }
+    }
+  }
+
+  /** updates variables <code>Translate.allclasses</code> and <code>Translate.cdeps</code>.
+   *
+   * @param theory The $isa theory to read for classes and class dependencies
+   */
+  def read_class_deps(theory: Export_Theory.Theory): Unit = {
+    for (isaclass <- theory.classes) {
+      val cname = isaclass.name
+      add_type_ident(cname, current_module)
+      val uqcname = Prelude.unqualify(cname)
+      cdeps += (uqcname -> (
+        if (isaclass.the_content.params.nonEmpty) (
+          Set(uqcname)
+          )
+        else Set()
+        ))
+    }
+    for (crel <- theory.classrel) {
+      val uq = Prelude.unqualify
+      cdeps(uq(crel.class1)) ++= cdeps(uq(crel.class2))
+    }
+    for (isaclass <- theory.classes) {
+      val uqcname = Prelude.unqualify(isaclass.name)
+      val deps = cdeps(uqcname)
+      if (deps.nonEmpty && !canon_map.contains(deps)) {
+        canon_map += deps -> uqcname
+      } 
+    }
+  }
+
+  def dep_representative(cname: String): Option[String] = {
+    val uqcname = Prelude.unqualify(cname)
+    val deps = cdeps.getOrElse(uqcname,error(s"class $uqcname not registered!"))
+    val res = canon_map.get(deps)
+    if (res.isEmpty && deps.nonEmpty) error("invariant broken for read_class_deps")
+    res
+  }
+
+  def class_of_sort(s : Term.Sort): Option[String] = {
+    val alldeps : Set[String] = s.foldRight(Set()){
+      case (cname,curdeps) =>
+        val uqcname = Prelude.unqualify(cname)
+        val deps = cdeps.getOrElse(uqcname,error(s"class $uqcname not registered!"))
+        curdeps.union(deps)
+    }
+    val res = canon_map.get(alldeps)
+    if (res.isEmpty && alldeps.nonEmpty) error("invariant broken for read_class_deps")
+    res
+  }
+
+  def destruct_Apps(tm: Term.Term): (Term.Term, Vector[Term.Term]) = tm match {
+    case Term.App(a,b) =>
+      val (hd,args) = destruct_Apps(a)
+      (hd,args :+ b)
+    case _ =>
+      (tm, Vector.empty)
+  }
+  
+  def get_cdeps(tm: Term.Term, Tyvar: String): Set[String] = {
+    val (hd, args) = destruct_Apps(tm)
+    var checkargs = true
+    def is_in(s: Set[String])(tm: Term.Term): Boolean = tm match {
+      case Term.Const(name, _) =>
+        s.contains(name)
+      case _ =>
+        false
+    }
+    val uq = Prelude.unqualify
+    val hddeps = hd match {
+      case Term.OFCLASS(Term.TFree(Tyvar, _), c) =>
+        cdeps(uq(c))
+      case Term.Const(s"$_.${c}_class$_", List(Term.TFree(Tyvar,_))) if !c.endsWith("intro_of") =>
+        cdeps(uq(c))
+      case Term.Const(s"$module.class.${name}_axioms",List(Term.TFree(Tyvar, _))) =>
+        val deps = cdeps(name)
+        val accessible_constants : Set[String] = deps.foldRight(Set())(ccsts(_).union(_))
+        if (args.forall(is_in(accessible_constants))) {
+          checkargs = false
+          deps
+        }
+        else Set()
+      case Term.App(_, _) =>
+        error("Invariant broken for destruct_Apps")
+      case Term.Abs(_, _, rem) =>
+        get_cdeps(rem, Tyvar)
+      case Term.Const(_, _) | Term.Var(_, _) | Term.Free(_, _) | Term.Bound(_) | Term.OFCLASS(_, _) =>
+        Set()
+    }
+    val argdeps: Set[String] = if (checkargs) args.foldRight(Set())(get_cdeps(_, Tyvar).union(_)) else Set()
+    hddeps.union(argdeps)
+  }
+
+  /** The $isa typeclass a type variable needs to belong to.
+   *
+   * @param tm the proposition context
+   * @param Tyvar the name of the type variable
+   * @return <code>Some tc</code> if <$arg>tm<$arge> mentions that <$arg>Tyvar<$arge> is
+   *         in typeclasses with overall <$met><u>[[class_max]]</u><$mete> <code>tc</code>
+   *         and None otherwise
+   */
+  def get_class(tm: Term.Term, Tyvar: String): Option[String] = {
+    val deps = get_cdeps(tm, Tyvar)
+    if (deps.isEmpty) None
+    else {
+      val res = canon_map.get(deps)
+      if (res.isEmpty) error(s"Unregistered dependency set\n  Problematic set: $deps")
+      else res
+    }
+  }
+
+  def class_pred_decl(module: String, c: String) : Syntax.Command = {
+    val id_p = add_class_pred_ident(c,module)
+    val ty = Syntax.arrow(typeT,Syntax.TYPE)
+    implArgsMap += id_p -> List(Some(true))
+    global_types += id_p -> ty
+    Syntax.DefableDecl(id_p, ty, tc=true)
+  }
+
+  def class_type_decl(module: String, c: String): List[Syntax.Command] = {
+    val id_type = add_class_type_ident(Prelude.unqualify(c), module)
+    val cmd_type = Syntax.Definition(id_type, Nil, Some(Syntax.TYPE), typeT)
+    /* Class types are all equal to Set. This means we do not have to deal with subtyping.
+    *  For this representation to work, the target language should support some form of meaningful
+    *  subtyping (for Rocq, this is done through coercions). All these types should be a subtype of
+    *  Set, the type of (pointed) types. Other subtyping should be as indicated by class dependencies.
+    *  Note: the result can easily be inconsistent in lambdapi, because we will assert that every
+    *  type in (cname)_class_type satisfies (cname)_class's axioms, but every (pointed) type is a
+    *  (cname)_class_type. This disappears with mappings by not having Set be a subtype of all class
+    *  types. */
+    val id_instance = add_const_ident(c + ".class_pred_of_type", module)
+    val ty_instance = Syntax.Prod(Syntax.BoundArg(Some("A"),Syntax.Symb(id_type)),
+      Syntax.Appl(Syntax.Symb(ref_class_pred_ident(dep_representative(c).get)), Syntax.Var("A")))
+    val cmd_instance = Syntax.DefableDecl(id_instance, ty_instance, inst = true)
+    List(cmd_type,cmd_instance)
+  }
+
+  def classrel_decl(module: String, class1: String, class2: String): Syntax.Command = {
+    val id_c = add_class_dep_ident(class1, class2, module)
+    val arg = Syntax.BoundArg(Some("A"),typeT)
+    def ofclass(cname: String): Syntax.Typ = Syntax.Appl(Syntax.Symb(ref_class_pred_ident(cname)),Syntax.Var("A"))
+    val ty = Syntax.Prod(arg,Syntax.arrow(ofclass(class1),ofclass(class2)))
+    Syntax.DefableDecl(id_c,ty,inst=true)
+  }
+  
+  def class_type_definition(module: String, c: String): Syntax.Command = {
+    val uqc = Prelude.unqualify(c)
+    val id_def = add_thm_ident(uqc + "_class_type_def", module)
+    val arg = List(Syntax.BoundArg(Some("A"),Syntax.Symb(ref_class_type_ident(uqc))))
+    val typ = eps(Syntax.Appl(Syntax.Symb(ref_class_ident(uqc)), Syntax.Symb("A")))
+    Syntax.Declaration(id_def, arg, typ)
+  }
 
   /** Declaration of an $isa typeclass in $dklp
    * 
@@ -851,15 +1126,13 @@ object Translate {
    */
   def class_decl(module: String, c: String, d: Option[Term.Term]): Syntax.Command = {
     val out_type = eta(Syntax.Symb(propId))
-    val class_type = Syntax.arrow(typeT,out_type)
-    val id_c = add_class_ident(c,module)
-    implArgsMap  += id_c -> List(false)
-    global_types += id_c -> class_type
+    val (args,impls) = bound_type_arguments(List(("'a",List(c))))
+    val id_c = add_class_ident(Prelude.unqualify(c),module)
+    implArgsMap  += id_c -> impls
+    global_types += id_c -> args.foldRight(out_type)(Syntax.Prod.apply)
     d match {
-      case None => Syntax.Declaration(id_c,List(),class_type)
-      case Some(d) =>
-        val typ_arg = Syntax.BoundArg(Some(var_ident("'a")),typeT)
-        Syntax.Definition(id_c,List(typ_arg),Some(out_type),term(d,Bounds()),None)
+      case None => Syntax.Declaration(id_c,args,out_type)
+      case Some(d) => Syntax.Definition(id_c,args,Some(out_type),term(d,Bounds()),None)
     }
   }
 
@@ -879,15 +1152,16 @@ object Translate {
   def type_decl(module: String, c: String, args: List[String], rhs: Option[Term.Typ], not: Export_Theory.Syntax): Syntax.Command = {
     val full_ty = Syntax.arrows(List.fill(args.length)(typeT), typeT)
     val id_c = add_type_ident(c,module)
-    implArgsMap  += id_c -> List.fill(args.length)(false)
+    implArgsMap  += id_c -> List.fill(args.length)(Some(false))
     global_types += id_c -> full_ty
+    val complete_args: List[(String,Term.Sort)] = args.map((_,List()))
 
     rhs match {
       case None =>
         Syntax.Declaration(id_c, Nil, full_ty, notation_decl(not))
       case Some(rhs) => {
         val translated_rhs = typ(rhs)
-        val full_tm : Syntax.Term = args.map(bound_type_argument(_)).foldRight(translated_rhs)(Syntax.Abst.apply)
+        val full_tm : Syntax.Term = bound_type_arguments(complete_args)._1.foldRight(translated_rhs)(Syntax.Abst.apply)
         val (new_args, contracted, ty) = fetch_head_args(eta_expand(eta_contract(full_tm)), full_ty)
         Syntax.Definition(id_c, new_args, Some(ty), contracted, notation_decl(not))
       }
@@ -931,17 +1205,59 @@ object Translate {
       canStillBeImplicit
     })
   }
-  
-  /** list of bound type arguments, names given by <$arg>args<$arge>
-   *  and implicitness given by <$arg>impl<$arge> */
-  def bound_type_arguments(args: List[String], impl: List[Boolean]): List[Syntax.BoundArg] =
+
+  /** List of bound type arguments
+   *
+   * @param args The list of names of the type arguments
+   * @param impl Whether the arguments are implicit
+   * @param tm A proof term, potentially giving information about $isa typeclasses for each argument.
+   * @return A list of bound arguments, containing all the types and also possibly
+   *         typeclass witnesses
+   * @see <$met><u>[[bound_type_argument]]</u><$mete>
+   */
+  def bound_type_arguments(args: List[(String,Term.Sort)])
+  (tm: Term.Term = Term.dummy, impl: List[Boolean] = args.map(_ => false)): (List[Syntax.BoundArg],List[Option[Boolean]]) =
     (args, impl) match {
-      case (Nil, Nil) => Nil
-      case (arg :: args, impl :: impls) => bound_type_argument(arg, impl) :: bound_type_arguments(args, impls)
+      case (Nil, Nil) => (Nil,Nil)
+      case (arg :: args, impl :: impls) => {
+        val (recres1, recres2) = bound_type_arguments(args)(tm, impls)
+        val res = bound_type_argument(arg, tm, impl)
+        val newimpls = if (res.length == 1) List(Some(impl)) else List(Some(impl), None)
+        (res ::: recres1, newimpls ::: recres2)
+      }
       case (Nil, _) => isabelle.error("Implicit list too long.")
       case (_, Nil) => isabelle.error("Implicit list too short.")
     }
 
+  /** <code><$metc>bound_type_arguments<$metce>(<$argc>args<$argce>) =
+   * <$metc><u>[[bound_type_arguments]]</u><$metce>(<$argc>args<$argce>)()
+   */
+  def bound_type_arguments(args: List[(String,Term.Sort)]) : (List[Syntax.BoundArg],List[Option[Boolean]]) =
+    bound_type_arguments(args)()
+
+  var all_instances: Set[(String,String)] = Set()
+  def new_instance(type_name: String, uqcname: String): Boolean = {
+    val key = (type_name,uqcname)
+    val is_new = !all_instances.contains(key)
+    if (is_new) all_instances += key
+    is_new
+  }
+  var current_arities: List[Export_Theory.Arity] = List()
+  
+  def args_from_arity(iname: String, cname: String, impl: List[Boolean] = List()): (List[Syntax.BoundArg],List[Option[Boolean]]) = {
+    @tailrec
+    def rec_ver(l: List[Export_Theory.Arity]): (List[Syntax.BoundArg],List[Option[Boolean]]) = l match {
+      case Export_Theory.Arity(type_name, _, codomain, prop) :: _ if type_name.endsWith(iname) &&
+        codomain.split('.').last == cname =>
+        if (impl.isEmpty) bound_type_arguments(prop.typargs) else bound_type_arguments(prop.typargs)(impl = impl)
+      case _ :: rest => rec_ver(rest)
+      case _ =>
+        val printarities = current_arities.mkString(s"\n\n")
+        error(s"Arity not found for type $iname of class $cname.\nKnown arities:\n$printarities")
+    }
+    rec_ver(current_arities)
+  }
+  
   /** Declaration of an $isa constant in $dklp
    *
    * @param module the module where the constant is defined
@@ -952,18 +1268,30 @@ object Translate {
    * @param not    the $isa notation for this constant
    * @return A $dklp command declaring the constant.
    */
-  def const_decl(module: String, c: String, typargs: List[String], ty: Term.Typ, rhs: Option[Term.Term], not: Export_Theory.Syntax): Syntax.Command = {
+  def const_decl(module: String, c: String, typargs: List[(String,Term.Sort)], ty: Term.Typ, rhs: Option[Term.Term],
+                 not: Export_Theory.Syntax, ignore_classes: Boolean = false): Syntax.Command = {
     val id_c = add_const_ident(c,module)
-    val impl = const_implicit_args(typargs, ty)
-    implArgsMap += id_c -> impl
-    val bound_args = bound_type_arguments(typargs, impl)
+    val impl = const_implicit_args(typargs.map(_._1), ty)
+    val (bound_args, full_impls) = (typargs,impl,c) match {
+      case (List((tyname,tysort)),List(imp),s"${cname}_class$_") if !ignore_classes =>
+        (bound_type_argument((tyname,cname :: tysort), impl = imp),
+          List(Some(imp), None))
+      case (_,_,s"$_.${cname}_${iname}_inst$_") if !(iname + cname).contains('.') =>
+        args_from_arity(iname,cname,impl)
+        /*
+        //dep_representative cannot return None: if there is an instantiation, the class is not parameter-less
+        val key = dep_representative(cname).get + "_" + iname
+        inst_args.getOrElse(key, bound_type_arguments(typargs)(impl=impl))*/
+      case _ =>
+        bound_type_arguments(typargs)(impl=impl)
+    }
+    implArgsMap += id_c -> full_impls
     val full_ty = bound_args.foldRight(eta(typ(ty)))(Syntax.Prod.apply)
     val contracted_ty = eta_expand(eta_contract(full_ty))
     global_types += id_c -> contracted_ty
     rhs match {
       case None =>
-        val (new_args, final_ty) = (Nil, contracted_ty) // fetch_head_args_type(contracted_ty)
-        Syntax.Declaration(id_c, new_args, final_ty, notation_decl(not))
+        Syntax.DefableDecl(id_c, contracted_ty, not=notation_decl(not))
       case Some(rhs) => {
         val translated_rhs = term(rhs, Bounds())
         val full_tm = bound_args.foldRight(translated_rhs)(Syntax.Abst.apply)
@@ -972,9 +1300,33 @@ object Translate {
       }
     }
   }
+  
+  def const_of_class_type_decl(module: String, class_name: String, const_name: String,
+                               typargs: List[(String, Term.Sort)], ty: Term.Typ, body: Term.Term): Syntax.Command = {
+    val name = add_const_ident(const_name + "_alt", module)
+    val impl = const_implicit_args(typargs.map(_._1), ty)
+    val class_type_ref = Syntax.Symb(ref_class_type_ident(Prelude.unqualify(class_name)))
+    val (full_args, full_impls) = (typargs,impl) match {
+      case (List((tyname,_)),List(imp)) =>
+        (List(Syntax.BoundArg(Some(var_ident(tyname)), class_type_ref, imp)), List(Some(imp)))
+      case _ =>
+        bound_type_arguments(typargs)(impl=impl) match {
+          case (Syntax.BoundArg(id, _, imp)::_::args, _::None::impls) =>
+            (Syntax.BoundArg(id, class_type_ref, imp)::args,Some(imp)::impls)
+          case _ =>
+            error("not enough arguments arguments in class parameter/definition")
+        }
+    }
+    val full_tm = full_args.foldRight(term(body,Bounds()))(Syntax.Abst.apply)
+    val full_ty = full_args.foldRight(eta(typ(ty)))(Syntax.Prod.apply)
+    val contracted_ty = eta_expand(eta_contract(full_ty))
+    implArgsMap += name -> full_impls
+    global_types += name -> contracted_ty
+    val (new_args, contracted, final_ty) = fetch_head_args(full_tm, contracted_ty)
+    Syntax.Definition(name,new_args,Some(final_ty),contracted)
+  }
 
   /* theorems and proof terms */
-
   /** Declaration of an $isa theorem/axiom in $dklp
    * 
    * @param s the name of the theorem/axiom
@@ -983,15 +1335,26 @@ object Translate {
    * @return a $dklp command declaring the symbol <$arg>s<$arge>, possibly with a translation of
    *         <$arg>prf_opt<$arge> as definitional body.
    */
-  def stmt_decl(s: String, prop: Export_Theory.Prop, prf_opt: Option[Term.Proof]): Syntax.Command = {
-    val args =
-      prop.typargs.map(_._1).map(bound_type_argument(_)) :::
-      prop.args.map(arg => bound_term_argument(arg._1, arg._2))
+  def stmt_decl(s: String, prop: Export_Theory.Prop, prf_opt: Option[Term.Proof], original_name: String = ""): Syntax.Command = {
+    val typargs = prop.typargs
+    val (bound_args, impls) = (typargs, original_name) match {
+      case (List((tyname,tysort)),s"${cname}_class$_") if !cname.endsWith("intro_of")=>
+        (bound_type_argument((tyname,cname :: tysort)),
+          List(Some(false), None))
+      case (_,s"$_.${cname}_${iname}_inst$_") if !(iname + cname).contains('.') =>
+        args_from_arity(iname,cname)
+        /*//dep_representative cannot return None: if there is an instance, the class is not parameter-less
+        val key = dep_representative(cname).get + "_" + iname
+        inst_args.getOrElse(key, bound_type_arguments(typargs))*/
+      case _ =>
+        bound_type_arguments(typargs)(tm=prop.term)
+    }
+    val args = bound_args ::: prop.args.map(arg => bound_term_argument(arg._1, arg._2))
 
     val full_ty = args.foldRight(eps(term(prop.term, Bounds())))(Syntax.Prod.apply)
     val contracted_ty = eta_expand(eta_contract(full_ty))
 
-    implArgsMap  += s -> List.fill(prop.typargs.length)(false) // Only those are applied immediately
+    implArgsMap  += s -> impls
     global_types += s -> contracted_ty
 
     try prf_opt match {
@@ -1012,4 +1375,17 @@ object Translate {
 //    catch { case ERROR(msg) => error(msg + "\nin " + quote(s)) }
   }
 
+  def stmt_of_class_type_decl(module: String, thm_name: String, sortmap: Map[String,String], prop: Export_Theory.Prop, prf: Term.Proof): Syntax.Command = {
+    val name = add_thm_ident(thm_name + "_alt", module)
+    val bound_args = prop.typargs.map( (tvar,_) =>
+      Syntax.BoundArg(Some(var_ident(tvar)), sortmap.get(tvar).fold(typeT)(cname => Syntax.Symb(ref_class_type_ident(cname))), true)
+    )
+    val args = bound_args ::: prop.args.map(arg => bound_term_argument(arg._1, arg._2))
+    val full_ty = args.foldRight(eps(term(prop.term, Bounds(), class_replacement = true)))(Syntax.Prod.apply)
+    val contracted_ty = eta_expand(eta_contract(full_ty))
+    val translated_rhs = proof(prf, Bounds())
+    val full_prf = args.foldRight(translated_rhs)(Syntax.Abst.apply)
+    val (new_args, contracted, final_ty) = fetch_head_args(eta_expand(eta_contract(full_prf)), contracted_ty)
+    Syntax.Theorem(name, new_args, final_ty, contracted)
+  }
 }

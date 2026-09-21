@@ -120,6 +120,7 @@ object Generator {
     to_lp: Boolean = true,
     use_notations: Boolean = true,
     eta_expand: Boolean = false,
+    with_class_types: Boolean = false,
     verbose: Boolean = false,
     translate: Boolean = true
   ): Unit = {
@@ -141,7 +142,7 @@ object Generator {
             Name.make_graph(List(((Name("Pure",Thy_Header.PURE),()),List())))
           } else error("the session has no parent")
         case Some(anc) =>
-          generator(options, anc, recursive, progress, dirs, outdir, to_lp, use_notations, eta_expand, verbose, translate = recursive)
+          generator(options, anc, recursive, progress, dirs, outdir, to_lp, use_notations, eta_expand, with_class_types, verbose, translate = recursive)
           graph(options, session, anc, progress, dirs, verbose)
         
       }
@@ -154,6 +155,7 @@ object Generator {
       to_lp = to_lp,
       use_notations = use_notations,
       eta_expand = eta_expand,
+      with_class_types = with_class_types,
       verbose = verbose,
       outdir = outdir)
 
@@ -174,6 +176,7 @@ object Generator {
         var recursive = false
         var use_notations = false
         var eta_expand = false
+        var with_class_types = false
         var options = Options.init()
         var verbose = false
         
@@ -186,6 +189,7 @@ object Generator {
     -r           recursively translate ancestor sessions
     -e           remove need for eta flag
     -n           use Lambdapi notations (without option -k only)
+    -t           add alternative types for typeclasses
     -o OPTION    override Isabelle system OPTION (via NAME=VAL or NAME)
     -v           verbose mode
 
@@ -195,6 +199,7 @@ Generate a dk or lp file for every theory of SESSION.""",
         "r" -> (_ => recursive = true),
         "e" -> (_ => eta_expand = true),
         "n" -> (_ => use_notations = true),
+        "t" -> (_ => with_class_types = true),
         "o:" -> (arg => { options += arg }),
         "v" -> (_ => verbose = true),
         "k" -> (_ => to_lp = false))
@@ -213,7 +218,7 @@ Generate a dk or lp file for every theory of SESSION.""",
 
         progress.interrupt_handler {
           try {
-            generator(options, session, recursive, progress, dirs, outdir, to_lp, use_notations, eta_expand, verbose)
+            generator(options, session, recursive, progress, dirs, outdir, to_lp, use_notations, eta_expand, with_class_types, verbose)
           }
           catch {case x: Exception =>
             progress.echo(x.getStackTrace.mkString("\n"))

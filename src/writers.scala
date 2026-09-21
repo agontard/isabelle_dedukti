@@ -7,7 +7,29 @@ import isabelle.dedukti.Syntax.*
 
 import java.io.{BufferedWriter, FileOutputStream, OutputStreamWriter, Writer}
 import java.nio.file.{Files, StandardCopyOption}
+import scala.annotation.tailrec
 import scala.collection.mutable.Map as MutableMap
+
+/*/** functions to write a class dependency map, to reuse for the rocq export. */
+class Map_Writer(file : Path) extends AutoCloseable {
+  private val writer =
+    new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file.file), UTF8.charset))
+
+  @tailrec
+  private def sumstring(names: List[String], acc: String = ":"): String = names match {
+    case Nil => ">Type'\n"
+    case List(name) => acc + name + '\n'
+    case name::rest => sumstring(rest, acc + name + '+')
+  }
+
+  def write_class_def(cname: String, cdeps: List[String]): Unit =
+    writer.write(cname + sumstring(cdeps))
+
+  def write_class_parent(cname:String, pname:String): Unit =
+    writer.write(cname+">"+pname+'\n')
+
+  def close(): Unit = writer.close()
+}*/
 
 /** Opens a path.part file for writing and then copy it to path.
  * @see [[Writer]] */
@@ -161,14 +183,6 @@ abstract class Abstract_Writer(root: String, writer: Writer) extends Ident_Write
 
   def term(t: Syntax.Term, notations: MutableMap[Syntax.Ident, Syntax.Notation],
            prevNot: Notation = justHadPars, right: Boolean = false, needs_explicit: Boolean = false): Unit
-
-  /** Write on <code>this</code> an argument and its type
-   *
-   * @param a         the $dklp argument to write
-   * @param block     true if it needs to be parenthesised
-   * @param notations a map between identifiers and their notation
-   */
-  def arg(a: Syntax.BoundArg, block: Boolean, notations: MutableMap[Syntax.Ident, Syntax.Notation]): Unit
 
   def comment(c: String): Unit
 
@@ -328,8 +342,8 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
   def colon_equal() : Unit = write(" ≔ ")
   def equiv()       : Unit = write(" ≡ ")
   def hook_arrow()  : Unit = write(" ↪ ")
-  def lambda()      : Unit = write("λ ")
-  def pi()          : Unit = write("Π ")
+  def lambda()      : Unit = write("λ")
+  def pi()          : Unit = write("Π")
   def turnstile()   : Unit = write(" ⊢ ")
 
   /** if <$arg>needs_explicit<$arge> is <code>true</code>, write an @ */
@@ -389,13 +403,25 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
         }
     }
   }
+  
+  def destruct_absts(t : Term, acc: List[BoundArg] = Nil): (List[BoundArg], Term) = t match {
+    case Abst(a, rem) => destruct_absts(rem, acc :+ a)
+    case _ => (acc,t)
+  }
 
+  def destruct_prods(t: Typ, acc: List[BoundArg] = Nil): (List[BoundArg], Typ) = t match {
+    case Prod(a, rem) if a.id.isDefined || a.implicit_arg => destruct_absts(rem, acc :+ a)
+    case _ => (acc, t)
+  }
+  
   /** Particular case of <$met><u>[[term]]</u><$mete>. */
-  def term_notation(t: Syntax.Term, notations: MutableMap[Syntax.Ident, Syntax.Notation],
+  def term_notation(t: Term, notations: MutableMap[Syntax.Ident, Syntax.Notation],
            prevNot: Notation, right: Boolean, needs_explicit: Boolean): Unit =
     t match {
       case Syntax.TYPE =>
         write("TYPE")
+      case Syntax.Wildcard =>
+        write("_")
       case Syntax.Symb(id) if notations contains id =>
         appl(t, notations, prevNot, right, needs_explicit)
       case Syntax.Symb(id) =>
@@ -406,9 +432,10 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
       case Syntax.Appl(_, _, _) =>
         appl(t, notations, prevNot, right, needs_explicit)
       case Syntax.Abst(a, t) =>
+        val (as, rem) = destruct_absts(t)
         val not = absNotation
         block_if(not, prevNot, right) {
-          lambda(); arg(a, block = false, notations); comma(); term(t, notations, not, needs_explicit = needs_explicit)
+          lambda(); args(a :: as, block = false, notations); comma(); term(rem, notations, not, needs_explicit = needs_explicit)
         }
       case Syntax.Prod(Syntax.BoundArg(None, ty1, false), ty2) =>
         val not = arrNotation
@@ -418,9 +445,10 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
           term(ty2, notations, not, right = true)
         }
       case Syntax.Prod(a, t) =>
+        val (as,rem) = destruct_prods(t)
         val not = absNotation
         block_if(not, prevNot, right) {
-          pi(); arg(a, block = false, notations); comma(); term(t, notations, not)
+          pi(); args(a :: as, block = false, notations); comma(); term(rem, notations, not)
         }
     }
 
@@ -430,6 +458,8 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
     t match {
       case Syntax.TYPE =>
         write("TYPE")
+      case Syntax.Wildcard =>
+        write("_")
       case Syntax.Symb(id) if notations contains id =>
         error("There should be no notations in this mode")
       case Syntax.Symb(id) =>
@@ -445,8 +475,9 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
           term(t2, notations, not, right = true)
         }
       case Syntax.Abst(a, t) =>
+        val (as,rem) = destruct_absts(t)
         block_if(Syntax.absNotation, prevNot, right) {
-          lambda(); arg(a, block = false, notations); comma(); term(t, notations, needs_explicit = needs_explicit)
+          lambda(); args(a::as, block = false, notations); comma(); term(rem, notations, needs_explicit = needs_explicit)
         }
       case Syntax.Prod(Syntax.BoundArg(None, ty1, false), ty2) =>
         val not = arrNotation
@@ -456,9 +487,10 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
           term(ty2, notations, not, right = true)
         }
       case Syntax.Prod(a, t) =>
+        val (as,rem) = destruct_prods(t)
         val not = absNotation
         block_if(not, prevNot, right) {
-          pi(); arg(a, block = false, notations); comma(); term(t, notations, not)
+          pi(); args(a :: as, block = false, notations); comma(); term(rem, notations, not)
         }
     }
 
@@ -478,18 +510,35 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
     else
       term_no_notation(t, notations, prevNot, right, needs_explicit)
 
+  var wildcard_counter: Int = 0
+  def unknown_arg(): String = {
+    val res = "wildcard_" + wildcard_counter.toString
+    wildcard_counter += 1
+    res
+  }
   
-  def arg(a: Syntax.BoundArg, block: Boolean, notations: MutableMap[Syntax.Ident, Syntax.Notation]): Unit = {
-    if (a.implicit_arg) write("[")
-    else if (block) lpar()
-    a.id match {
-      case Some(id) => var_ident(id)
-      case None => write('_')
-    }
-    colon()
-    term(a.typ, notations)
-    if (a.implicit_arg) write("]")
-    else if (block) rpar()
+  @tailrec
+  private def args(l: List[BoundArg], block: Boolean, notations: MutableMap[Syntax.Ident, Syntax.Notation], pre_column: Boolean = false): Unit = l match {
+    case a0::l0 =>
+      write(' ')
+      def argname(a : BoundArg): Unit = a.id match {
+        case Some(id) => var_ident(id)
+        case None => if (pre_column) write('_') else write(unknown_arg())
+      }
+      val true_block = block || l0.nonEmpty
+      if (a0.implicit_arg) write("[") else if (true_block) write("(")
+      argname(a0)
+      def consume(a: BoundArg): Boolean = {
+        val is_similar_arg = a.typ == a0.typ && a.implicit_arg == a0.implicit_arg
+        if (is_similar_arg) {write(' '); argname(a)}
+        is_similar_arg
+      }
+      val rest = l0.dropWhile(consume)
+      colon()
+      term(a0.typ, notations)
+      if (a0.implicit_arg) write("]") else if (true_block) rpar()
+      args(rest, true, notations, pre_column)
+    case _ =>
   }
 
   /** comment + new line */
@@ -511,6 +560,7 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
     def newvars(idopt: Option[Ident]): Set[Ident] = idopt.fold(vars)(vars - _)
     t match {
       case Syntax.TYPE => t
+      case Syntax.Wildcard => t
       case Syntax.Symb(_) => t
       case Syntax.Var(id) if vars(id) => Syntax.Var("$" + id)
       case Syntax.Var(_) => t
@@ -544,17 +594,16 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
    * @param nota_opt the optional notation of the symbol
    * @param notations a map between identifiers and their $lp notation
    */
-  def symbol_and_notation(id: Ident, args: List[BoundArg], ty_opt: Option[Typ], body_opt: Option[Term],
+  def symbol_and_notation(id: Ident, argl: List[BoundArg], ty_opt: Option[Typ], body_opt: Option[Term],
                           nota_opt: Option[Notation], notations: MutableMap[Ident, Notation], prefix: String = ""): Unit = {
     if (!is_replaced(id)) {
       val (new_id, new_nota_opt) =
         if (use_notations) (nota_opt.fold(id)(getOperator), nota_opt)
         else (id, None)
-      write(prefix + "symbol ");
+      write(prefix + "symbol ")
       sym_ident(new_id)
-      for (a <- args) {
-        space(); arg(a, block = true, notations)
-      }
+      wildcard_counter = 0
+      args(argl, block = true, notations, pre_column = true)
       for (ty <- ty_opt) {
         colon(); term(ty, notations)
       }
@@ -575,13 +624,20 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
     c match {
       case Syntax.Declaration(id, args, ty, not) =>
         symbol_and_notation(id, args, Some(ty), None, not, notations, "constant ")
-      case Syntax.DefableDecl(id, ty, inj, not) =>
-        val prefix = if (inj) "injective " else ""
+      case Syntax.DefableDecl(id, ty, inj, tc, inst, not) =>
+        val injm = if (inj) "injective " else ""
+        val tcm = if (tc) "typeclass " else ""
+        val instm = if (inst) "instance " else ""
+        val prefix = injm + tcm + instm
         symbol_and_notation(id, List(), Some(ty), None, not, notations, prefix)
       case Syntax.Definition(id, args, ty, tm, not) =>
         symbol_and_notation(id, args, ty, Some(tm), not, notations)
       case Syntax.Theorem(id, args, ty, prf) =>
         symbol_and_notation(id, args, Some(ty), Some(prf), None, notations, "opaque ")
+      case Syntax.Coercion(t1, t2, coercion_fun) =>
+        write(s"coerce_rule coerce $t1 $t2 $$x ↪ ")
+        term(coercion_fun(Syntax.Symb("$x")), notations)
+        end_command()
     }
   }
   
@@ -624,6 +680,8 @@ class DK_Writer(writer: Writer) extends Abstract_Writer("", writer) {
     t match {
       case Syntax.TYPE =>
         write("Type")
+      case Syntax.Wildcard =>
+        write("_")
       case Syntax.Symb(id) =>
         sym_qident(id)
       case Syntax.Var(id) =>
@@ -646,7 +704,13 @@ class DK_Writer(writer: Writer) extends Abstract_Writer("", writer) {
       case Syntax.Prod(a, t) =>
         block_if(absNotation, prevNot, right) { arg(a, block = false, notations); ar_pi() ; term(t) }
     }
-    
+
+  /** Write on <code>this</code> an argument and its type
+   *
+   * @param a         the $dk argument to write
+   * @param block     true if it needs to be parenthesised
+   * @param notations a map between identifiers and their notation
+   */
   def arg(a: Syntax.BoundArg, block: Boolean, notations: MutableMap[Syntax.Ident, Syntax.Notation]): Unit = {
     if (block) lpar()
     a.id match {
@@ -682,7 +746,7 @@ class DK_Writer(writer: Writer) extends Abstract_Writer("", writer) {
           dot();
           nl()
         }
-      case Syntax.DefableDecl(id, ty, _, _) =>
+      case Syntax.DefableDecl(id, ty, _, _, _, _) =>
         write("def ")
         sym_ident(id)
         colon(); term(ty)
@@ -707,6 +771,7 @@ class DK_Writer(writer: Writer) extends Abstract_Writer("", writer) {
         colon(); term(ty)
         dfn(); term(prf)
         dot(); nl()
+      case _ : Syntax.Coercion => error("Coercions do not exist in Dedukti")
     }
   }
 
