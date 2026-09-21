@@ -17,10 +17,12 @@ default help:
 	@echo - ISADK_DIR: source directory of isabelle_dedukti
 	@echo - OUT_DIR: directory where to put generated files
 	@echo - ROCQ_OPTIONS: rocq options
+	@echo - ROCQ_LIBNAME: logical path to the generated rocq library
 	@echo - ROOT_DIR: ROOT file directory
 
 ISADK_DIR = ..
-ROCQ_OPTIONS = -q -no-glob
+ROCQ_OPTIONS = $(shell if test -f _CoqProject; then sed -z 's/.*-arg "\(.*\)".*/\1/' _CoqProject; fi) -no-glob
+ROCQ_LIBNAME = Isabelle
 ROOT_DIR = .
 OUT_DIR = .
 
@@ -145,7 +147,7 @@ include $(wildcard $(OUT_DIR)/lpcheck_*.mk)
 lpo: $(OUT_DIR)/$(SESSION_MODNAME).lpo
 
 %.lpo: %.lp
-	lambdapi check -c -w -v0 $<
+	lambdapi check -c -w -v 0 $<
 
 .PHONY: clean-lpo
 clean-lpo: rm-lpo
@@ -156,31 +158,39 @@ rm-lpo:
 
 ############# generation of Rocq files ##############
 
-DK_FILES := $(wildcard $(OUT_DIR)/*.dk)
-#LP_FILES := $(wildcard $(OUT_DIR)/*.lp)
+#DK_FILES := $(wildcard $(OUT_DIR)/*.dk)
+LP_FILES := $(wildcard $(OUT_DIR)/*.lp)
 
 .PHONY: v
-v: $(OUT_DIR)/mappings.v $(DK_FILES:%.dk=%.v)
+v: $(OUT_DIR)/mappings.v $(OUT_DIR)/_CoqProject $(LP_FILES:%.lp=%.v)
 
 LAMBDAPI = lambdapi
 
 $(OUT_DIR)/mappings.v: $(ISADK_DIR)/mappings.v
 	cp -f $< $@
 
-%.v: %.dk
-	@echo lambdapi export -o stt_coq $<
-	@$(LAMBDAPI) export -o stt_coq --encoding $(ISADK_DIR)/encoding.lp --mapping $(ISADK_DIR)/mappings.lp --renaming $(ISADK_DIR)/renaming.lp --requiring mappings $< | sed -e '/^Require STTfa\./d' > $@
+$(OUT_DIR)/_CoqProject: $(ISADK_DIR)/_CoqProject
+	cp -f $< $@
 
-#%.v: %.lp
+#%.v: %.dk
 #	@echo lambdapi export -o stt_coq $<
-#	@$(LAMBDAPI) export -o stt_coq --encoding $(ISADK_DIR)/encoding.lp --mapping $(ISADK_DIR)/mappings.lp --renaming $(ISADK_DIR)/renaming.lp --requiring mappings $< | sed -e '/^Require Isabelle\.STTfa\./d' > $@
+#	@$(LAMBDAPI) export -o stt_coq --encoding $(ISADK_DIR)/encoding.lp --mapping $(ISADK_DIR)/mappings.lp --renaming $(ISADK_DIR)/renaming.lp --requiring mappings $< | sed -e '/^Require STTfa\./d' > $@
+
+REQUIRING = mathcomp.boot.monoid mathcomp.boot.nmodule mathcomp.order.order mathcomp.algebra.numeric_hierarchy.ssrnum Isabelle.mappings
+%.v: %.lp
+	@echo lambdapi export -o stt_coq $<
+	@$(LAMBDAPI) export -o stt_coq --use-notations --encoding=$(ISADK_DIR)/lpencoding.lp --mapping=$(ISADK_DIR)/lpmappings.lp --renaming=$(ISADK_DIR)/renaming.lp --requiring="$(REQUIRING)" $< | sed -e '/^Require Export Isabelle\.STTfa\./d' > $@
 
 .PHONY: clean-v
-clean-v: rm-v rm-vo-mk clean-vo
+clean-v: rm-v rm-_CoqProject rm-vo-mk clean-vo
 
 .PHONY: rm-v
 rm-v:
 	find $(OUT_DIR) -maxdepth 1 -name '*.v' -delete
+
+.PHONY: rm-_CoqProject
+rm-_CoqProject:
+	rm -f _CoqProject
 
 .PHONY: rm-vo-mk
 rm-vo-mk:
@@ -188,11 +198,11 @@ rm-vo-mk:
 
 ############# verification of Rocq files ##############
 
-include $(subst dkcheck,rocqcheck,$(wildcard $(OUT_DIR)/dkcheck_*.mk))
+include $(subst lpcheck,rocqcheck,$(wildcard $(OUT_DIR)/lpcheck_*.mk))
 
-$(OUT_DIR)/rocqcheck_%.mk : $(OUT_DIR)/dkcheck_%.mk
+$(OUT_DIR)/rocqcheck_%.mk : $(OUT_DIR)/lpcheck_%.mk
 	@echo generate $@
-	@sed -e 's/\.dk/\.v/g' $< > $@
+	@sed -e 's/\.lp/\.v/g' $< > $@
 	@echo >> $@
 	@echo '$$(OUT_DIR)/STTfa.vo: $$(OUT_DIR)/mappings.vo' >> $@
 
@@ -201,7 +211,7 @@ vo: $(OUT_DIR)/$(SESSION_MODNAME).vo
 
 %.vo: %.v
 	@echo rocq compile $<
-	@rocq compile $(ROCQ_OPTIONS) $<
+	@rocq compile -Q $(OUT_DIR) $(ROCQ_LIBNAME) $(ROCQ_OPTIONS) $<
 
 .PHONY: clean-vo
 clean-vo: rm-vo rm-aux rm-caches

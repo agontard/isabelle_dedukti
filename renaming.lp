@@ -3,3 +3,5 @@
 
 builtin "by_" ≔ by;
 builtin "exists_" ≔ exists;
+builtin "set" ≔ {|set|};
+builtin "remove" ≔ {|remove|};
