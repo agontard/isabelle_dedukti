@@ -133,6 +133,15 @@ object Exporter {
       case _ => false
     }
 
+  @tailrec
+  def get_call(proof: Term.Proof, args: List[String]): Option[PThm] = (proof, args) match {
+    case (thm: PThm, Nil) =>
+      Some(thm)
+    case (Appt(proofrem, arg), argname :: argsrem) if is_abstract_free(arg, argname) =>
+      get_call(proofrem, argsrem)
+    case _ =>
+      None
+  }
   /** Reads an $isa session and possibly translates it to $dk files
    * 
    * @param options $isa options to read the session
@@ -310,18 +319,55 @@ object Exporter {
           case _ =>
         }
 
+        def read_proof(prf: Long): Unit = {
+          if (!Translate.replace_serial.contains(prf)) {
+            if (verbose) progress.echo("  proof " + prf)
+            use_proof(theory_name, prf) {
+              case (proof, prop) => get_call(proof, prop.args.map(_._1).reverse) match {
+                case Some(PThm(serial, _, thm_name, _)) =>
+                  val new_mapping = {
+                    if (!thm_name.is_empty) (thm_name.name, Export_Theory.Kind.THM)
+                    else Translate.replace_serial.getOrElse(serial, (f"proof_$serial", ""))
+                  }
+                  Translate.replace_serial += prf -> new_mapping 
+                case _ =>
+              }
+            }
+          }
+        }
+
         progress.echo("Start reading theory "+theory_name)
         val provider = ses_cont.theory(theory_name, other_cache=Some(term_cache))
         val theory = read_theory(provider)
+        Translate.current_arities = theory.arities
         for (a <- theory.types) {
           if (verbose) progress.echo("  "+a.toString+" "+a.serial)
           Translate.type_decl(theory_name, a.name, a.the_content.args, None, No_Syntax)
         }
-        for (a <- theory.consts) {
-          if (verbose) progress.echo("  "+a.toString+" "+a.serial)
-          Translate.const_decl(theory_name, a.name, a.the_content.typargs, a.the_content.typ, None, No_Syntax)
-        }
         Translate.read_class_deps(theory)
+        for ((_, c) <- Translate.canon_map if theory.classes.exists(tc => Prelude.unqualify(tc.name) == c)) {
+          Translate.class_pred_decl(theory_name, c)
+        }
+        for (a <- theory.consts) {
+          if (verbose) progress.echo("  " + a.toString + " " + a.serial)
+          val cst = a.the_content
+          val name = if (a.name.endsWith("_class")) Prelude.unqualify(a.name) else a.name
+          Translate.const_decl(theory_name, name, cst.typargs, cst.typ, None, No_Syntax)
+          a.name match {
+            case s"${cname}_class.$rest" =>
+              Translate.add_cst(cname, a.name)
+              val altname = a.name + "_alt"
+              Translate.const_decl(theory_name, altname, cst.typargs, cst.typ, None, No_Syntax, ignore_classes = true)
+            case _ =>
+          }
+        }
+        if (with_class_types) {
+          for (c <- theory.classes if Translate.cdeps(Prelude.unqualify(c.name)).nonEmpty) {
+            if (verbose) progress.echo("  type for class " + c.name)
+            Translate.class_type_decl(theory_name, c.name)
+            Prelude.add_thm_ident(Prelude.unqualify(c.name) + "_class_type_def", theory_name)
+          }
+        }
         for (a <- theory.axioms) {
           if (verbose) progress.echo("  "+a.toString+" "+a.serial)
           Translate.stmt_decl(Prelude.add_axiom_ident(a.name, theory_name), a.the_content.prop, None, a.name)
@@ -331,6 +377,21 @@ object Exporter {
           val thm = a.the_content
           Translate.stmt_decl(Prelude.add_thm_ident(a.name, theory_name), thm.prop, None, a.name)
           update_useless_proofs(a.name, thm.proof, thm.prop.args.map(_._1).reverse)
+        }
+        for (prf <- map_theory_proofs(theory_name)
+             if (!Translate.replace_serial.contains(prf))) {
+          if (verbose) progress.echo("  proof " + prf)
+          use_proof(theory_name, prf) {
+            case (proof, prop) => get_call(proof, prop.args.map(_._1).reverse) match {
+              case Some(PThm(serial, _, thm_name, _)) =>
+                val new_mapping = {
+                  if (!thm_name.is_empty) (thm_name.name, Export_Theory.Kind.THM)
+                  else Translate.replace_serial.getOrElse(serial, (f"proof_$serial", ""))
+                }
+                Translate.replace_serial += prf -> new_mapping
+                case _ =>
+            }
+          }
         }
         progress.echo("End reading theory "+theory_name)
       }
@@ -707,16 +768,6 @@ object Exporter {
              * replacement is <code>Some(name)</code> if it is to be replaced by a theorem
              * and <code>None</code> if it is to be erased. */
             var replace_serial: Map[Long, Option[String]] = Map()
-
-            @tailrec
-            def get_call(proof: Term.Proof,args: List[String]): Option[PThm] = (proof,args) match {
-              case (thm : PThm,Nil) =>
-                Some(thm)
-              case (Appt(proofrem, arg), argname::argsrem) if is_abstract_free(arg,argname) =>
-                get_call(proofrem,argsrem)
-              case _ =>
-                None
-            }
             
             /** In $isa, Some theorem proofs are a reference to an unnamed lemma proving the exact same
              * statement. This function recursively inspects the proof of a theorem to delete all such useless lemmas
