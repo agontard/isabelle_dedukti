@@ -153,11 +153,17 @@ object Prelude {
    * <$metc><u>[[add_name]]</u><$metce>(<$argc>a<$argce>+<$str>"_class_pred"<$stre>, <$str>"type"<$stre>, <$argc>module<$argce>)</pre></code>
    */
   def add_class_pred_ident(a: String, module: String): String = add_name(a + "_class_pred", Export_Theory.Kind.TYPE, module)
+  /** <pre><code><$metc>add_class_type_ident<$metce>(<$argc>a<$argce>, <$argc>module<$argce>) =
+   * <$metc><u>[[add_name]]</u><$metce>(<$argc>a<$argce>+<$str>"_class_type"<$stre>, <$str>"type"<$stre>, <$argc>module<$argce>)</pre></code>
+   */
   def add_class_type_ident(a: String, module: String): String = add_name(a + "_class_type", Export_Theory.Kind.TYPE, module)
   /** <pre><code><$metc>add_type_ident<$metce>(<$argc>a<$argce>, <$argc>module<$argce>) =
    * <$metc><u>[[add_name]]</u><$metce>(<$argc>a<$argce>, <$str>"type"<$stre>, <$argc>module<$argce>)</pre></code>
    */
   def add_type_ident(a: String, module: String): String = add_name(a, Export_Theory.Kind.TYPE, module)
+  /** <pre><code><$metc>add_subtype_ident<$metce>(<$argc>a<$argce>, <$argc>b<$argce>, <$argc>module<$argce>) =
+   * <$metc><u>[[add_name]]</u><$metce>(<$str>"<$argc>b<$argce>_of_<$argc>a<$argce>"<$stre>, <$str>"const"<$stre>, <$argc>module<$argce>)</pre></code>
+   */
   def add_subtype_ident(a: String, b: String, module: String): String = add_name(s"${b}_of_${a}", Export_Theory.Kind.CONST, module)
   /** Adds a new dependency instance name for two $isa classes
    *
@@ -190,12 +196,17 @@ object Prelude {
    * @return The translated name of the object <$arg>a<$arge>_class of kind const
    */
   def ref_class_ident(a: String): String = get_name(a+"_class", Export_Theory.Kind.CONST)
-  /** The name of an $isa class's type
+  /** The name of an $isa class's predicate
    *
    * @param a the unqualified name of the class
    * @return The translated name of the object <$arg>a<$arge>_class_pred of kind type
    */
   def ref_class_pred_ident(a: String): String = get_name(a + "_class_pred", Export_Theory.Kind.TYPE)
+  /** The name of an $isa class's type
+   *
+   * @param a the unqualified name of the class
+   * @return The translated name of the object <$arg>a<$arge>_class_type of kind type
+   */
   def ref_class_type_ident(a: String): String = get_name(a + "_class_type", Export_Theory.Kind.TYPE)
   /** The name of two $isa class's dependency instance
    *
@@ -348,7 +359,15 @@ object Translate {
 
 
   /* binders */
-  
+
+  /** The bound arguments representing an $isa type variable
+   *
+   * @param typ the name and stored sort of the $isa type
+   * @param tm a term to look into for more sort information about <$arg>typ<$arge>
+   * @param impl whether the type argument should be implicit
+   * @return a bound variable containing <$arg>typ<$arge> and a possible other argument
+   *         storing a class assignment for <$arg>typ<$arge>
+   */
   def bound_type_argument(typ : (String, Term.Sort), tm: Term.Term=Term.dummy, impl: Boolean = false): List[Syntax.BoundArg] = typ match {
     case (name,s) =>
       val typarg = Syntax.BoundArg(Some(var_ident(name)), typeT, impl)
@@ -423,6 +442,8 @@ object Translate {
    *
    * @param tm the $isa term to translate
    * @param bounds the context of bound variables and their de Bruijn indices
+   * @param class_replacement Whether to replace all calls to class constants
+   *                          with their alternative for bundled structures
    * @return the corresponding $dklp term
    */
   def term(tm: Term.Term, bounds: Bounds, class_replacement : Boolean = false): Syntax.Term =
@@ -918,20 +939,6 @@ object Translate {
   
   /** Maps sets of <code>cdeps</code> to a canonical $isa class having these deps */
   var canon_map: Map[Set[String], String] = Map()
-  
-  /** Known translations of $isa typeclass dependencies */
-  var known_instances: Set[Syntax.Typ] = Set()
-  
-  def is_new_instance(ty: Syntax.Typ): Boolean = {
-    val res = !known_instances.contains(ty)
-    if (res) known_instances += ty
-    res
-  }
-
-/*  def cstdeps(class1: String, class2: String): Set[(String,String)] =
-    (cdeps(class1) & cdeps(class2)).flatMap{ dep =>
-      ccsts(dep).map((_,dep))
-    }*/
 
   /** Computes the $isa class with the most constants
    *
@@ -992,6 +999,12 @@ object Translate {
     }
   }
 
+  /** <code><$metc>dep_representative<$metce>(<$argc>cname<$argce>)</code>
+   *  is the unqualified name of a class with the same set of class constants as
+   *  <$arg>cname<$arge>, uniquely determined by this set
+   *
+   * @throws isabelle.error if <$arg>cname<$arge> is not a known class 
+   */
   def dep_representative(cname: String): Option[String] = {
     val uqcname = Prelude.unqualify(cname)
     val deps = cdeps.getOrElse(uqcname,error(s"class $uqcname not registered!"))
@@ -1000,6 +1013,9 @@ object Translate {
     res
   }
 
+  /** Similar to <$met><u>[[dep_representative]]</u><$mete> but with the union of the
+   *  sets of class constants of all classes in <$arg>s<$arge> 
+   */
   def class_of_sort(s : Term.Sort): Option[String] = {
     val alldeps : Set[String] = s.foldRight(Set()){
       case (cname,curdeps) =>
@@ -1012,6 +1028,7 @@ object Translate {
     res
   }
 
+  /** Splits an $isa term between head and arguments */
   def destruct_Apps(tm: Term.Term): (Term.Term, Vector[Term.Term]) = tm match {
     case Term.App(a,b) =>
       val (hd,args) = destruct_Apps(a)
@@ -1019,7 +1036,16 @@ object Translate {
     case _ =>
       (tm, Vector.empty)
   }
-  
+
+  /** Reads all classes an $isa type variable must belong to
+   * 
+   * @param tm the proposition to look in for class assignments
+   * @param Tyvar the type variable's name
+   * @return the set of classes <code>c</code> <$arg>Tyvar<$arge> must belong to
+   *         according to <$arg>tm<$arge>, both because of hypotheses
+   *         of the form <code>[[OFCLASS]](<$argc>Tyvar<$argce>,c)</code>
+   *         and because of <$arg>Tyvar<$arge> using constants of class c
+   */
   def get_cdeps(tm: Term.Term, Tyvar: String): Set[String] = {
     val (hd, args) = destruct_Apps(tm)
     var checkargs = true
@@ -1072,6 +1098,12 @@ object Translate {
     }
   }
 
+  /** Declaration of an $isa typeclass's predicate in $lp
+   *
+   * @param module the module where the typeclass is defined
+   * @param c      the name of the typeclass
+   * @return A $lp command declaring the typeclass's associated $lp typeclass.
+   */
   def class_pred_decl(module: String, c: String) : Syntax.Command = {
     val id_p = add_class_pred_ident(c,module)
     val ty = Syntax.arrow(typeT,Syntax.TYPE)
@@ -1080,6 +1112,15 @@ object Translate {
     Syntax.DefableDecl(id_p, ty, tc=true)
   }
 
+  /** Declaration of an $isa typeclass's bundled type in $lp
+   *
+   * @param module the module where the typeclass is defined
+   * @param c      the name of the typeclass
+   * @return A list containing a $lp command declaring the typeclass's associated type
+   *         <code><$argc>c<$argce>_class_type</code> and one
+   *         stating that for all <$lpc>T : <$argc>c<$argce>_class_type<$lpce>,
+   *         <$lpc>El T<$lpce> is an instance of <$arg>c<$arge>'s associated $lp typeclass
+   */
   def class_type_decl(module: String, c: String): List[Syntax.Command] = {
     val id_type = add_class_type_ident(Prelude.unqualify(c), module)
     val cmd_type = Syntax.Definition(id_type, Nil, Some(Syntax.TYPE), typeT)
@@ -1098,6 +1139,14 @@ object Translate {
     List(cmd_type,cmd_instance)
   }
 
+  /** Declaration of a $isa typeclass subtyping
+   *
+   * @param module the module where the typeclass is defined
+   * @param class1 the name of the first typeclass
+   * @param class2 the name of the second typeclass
+   * @return A $lp command declaring that <$arg>class1<$arge> is a subclass of
+   *         <$arg>class2<$arge>
+   */
   def classrel_decl(module: String, class1: String, class2: String): Syntax.Command = {
     val id_c = add_class_dep_ident(class1, class2, module)
     val arg = Syntax.BoundArg(Some("A"),typeT)
@@ -1105,7 +1154,15 @@ object Translate {
     val ty = Syntax.Prod(arg,Syntax.arrow(ofclass(class1),ofclass(class2)))
     Syntax.DefableDecl(id_c,ty,inst=true)
   }
-  
+
+  /** Declaration of $isa typeclass's type definition
+   *
+   * @param module the module where the typeclass is defined
+   * @param c      the name of the typeclass
+   * @return A $lp command declaring an axiom which states that
+   *         for all <$lpc>T : <$argc>c<$argce>_class_type<$lpce>,
+   *         <$lpc>El T<$lpce> satisfies <$arg>c<$arge>'s axioms
+   */
   def class_type_definition(module: String, c: String): Syntax.Command = {
     val uqc = Prelude.unqualify(c)
     val id_def = add_thm_ident(uqc + "_class_type_def", module)
@@ -1235,15 +1292,23 @@ object Translate {
   def bound_type_arguments(args: List[(String,Term.Sort)]) : (List[Syntax.BoundArg],List[Option[Boolean]]) =
     bound_type_arguments(args)()
 
+  /** Set of known $isa typeclass instances */
   var all_instances: Set[(String,String)] = Set()
+  /** looks in set [[Translate.all_instances]] whether a type is already
+   *  known to be an instance of an $isa class while updating it if not
+   */
   def new_instance(type_name: String, uqcname: String): Boolean = {
     val key = (type_name,uqcname)
     val is_new = !all_instances.contains(key)
     if (is_new) all_instances += key
     is_new
   }
+  /** List of the current $isa theory's arities (typeclass instances) */
   var current_arities: List[Export_Theory.Arity] = List()
   
+  /** Uses [[Translate.current_arities]] to find an
+   *  instantiation's sort assignments, returning the corresponding
+   *  <$met><u>[[bound_type_arguments]]</u><$mete>*/
   def args_from_arity(iname: String, cname: String, impl: List[Boolean] = List()): (List[Syntax.BoundArg],List[Option[Boolean]]) = {
     @tailrec
     def rec_ver(l: List[Export_Theory.Arity]): (List[Syntax.BoundArg],List[Option[Boolean]]) = l match {
@@ -1278,10 +1343,6 @@ object Translate {
           List(Some(imp), None))
       case (_,_,s"$_.${cname}_${iname}_inst$_") if !(iname + cname).contains('.') =>
         args_from_arity(iname,cname,impl)
-        /*
-        //dep_representative cannot return None: if there is an instantiation, the class is not parameter-less
-        val key = dep_representative(cname).get + "_" + iname
-        inst_args.getOrElse(key, bound_type_arguments(typargs)(impl=impl))*/
       case _ =>
         bound_type_arguments(typargs)(impl=impl)
     }
@@ -1301,6 +1362,10 @@ object Translate {
     }
   }
   
+  /** like <$met><u>[[const_decl]]</u><$mete> but declares an alternative version of the symbol
+   *  for bundled structures of class <$arg>class_name<$arge>, using
+   *  alternative versions of all class constants appearing in the symbol's
+   *  definition */
   def const_of_class_type_decl(module: String, class_name: String, const_name: String,
                                typargs: List[(String, Term.Sort)], ty: Term.Typ, body: Term.Term): Syntax.Command = {
     val name = add_const_ident(const_name + "_alt", module)
@@ -1343,9 +1408,6 @@ object Translate {
           List(Some(false), None))
       case (_,s"$_.${cname}_${iname}_inst$_") if !(iname + cname).contains('.') =>
         args_from_arity(iname,cname)
-        /*//dep_representative cannot return None: if there is an instance, the class is not parameter-less
-        val key = dep_representative(cname).get + "_" + iname
-        inst_args.getOrElse(key, bound_type_arguments(typargs))*/
       case _ =>
         bound_type_arguments(typargs)(tm=prop.term)
     }
@@ -1359,8 +1421,7 @@ object Translate {
 
     try prf_opt match {
       case None => {
-        val (new_args, final_ty) = (Nil, contracted_ty) // fetch_head_args_type(contracted_ty)
-        //dfn_of_eq_decl(s, new_args, final_ty)++
+        val (new_args, final_ty) = (Nil, contracted_ty)
         Syntax.Declaration(s, new_args, final_ty)
         }
       case Some(prf) => {
@@ -1375,6 +1436,10 @@ object Translate {
 //    catch { case ERROR(msg) => error(msg + "\nin " + quote(s)) }
   }
 
+  /** like <$met><u>[[stmt_decl]]</u><$mete> but declares an alternative version of the symbol
+   * for bundled structures of class <$arg>class_name<$arge>, using
+   * alternative versions of all class constants appearing in the symbol's
+   * type */
   def stmt_of_class_type_decl(module: String, thm_name: String, sortmap: Map[String,String], prop: Export_Theory.Prop, prf: Term.Proof): Syntax.Command = {
     val name = add_thm_ident(thm_name + "_alt", module)
     val bound_args = prop.typargs.map( (tvar,_) =>

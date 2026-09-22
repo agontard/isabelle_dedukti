@@ -243,6 +243,3 @@ object Syntax {
    * @param ty   the type of the symbol, which is the statement of the theorem
    * @param prf  the body of the symbol, which is the proof of the theorem */
   case class Theorem(id: Ident, args: List[BoundArg], ty: Typ, prf: Term) extends Command
-
-  case class Coercion(t1: String, t2: String, coercion_fun: Term => Term) extends Command
-}

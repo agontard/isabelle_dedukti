@@ -101,14 +101,20 @@ object Generator {
   }
 
   /** reads an $isa Session and all its parents
-   *  and calls <$met><u>[[Exporter.exporter]]</u><$metc>
+   *  and calls <$met><u>[[Exporter.exporter]]</u><$mete>.
+   *  Options documentation is available at the end of generator.scala
    * 
-   * @param options $isa options for reading the session info
+   * @param options option <code>-o</code> (default: <code><$metc><u>[[Options.init]]</u><$metce>()</code>)
    * @param session the $isa session to translate
-   * @param recursive set to true to recursively translate all parent sessions 
-   * @param dirs paths to session directories
-   * @param outdir the directory to output to
+   * @param recursive option <code>-r</code>
+   * @param dirs option <code>-d</code> (default: <code>Nil</code>)
+   * @param outdir option <code>-D</code> (default: <$str>""<$stre>)
    * @param translate pass the info from recursive
+   * @param to_lp opposite of option <code>-k</code>
+   * @param use_notations option <code>-n</code>
+   * @param eta_expand option <code>-e</code>
+   * @param with_class_types option <code>-t</code>
+   * @param verbose option <code>-v</code>
    */
   def generator(
     options: Options,

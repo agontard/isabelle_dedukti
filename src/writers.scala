@@ -10,27 +10,6 @@ import java.nio.file.{Files, StandardCopyOption}
 import scala.annotation.tailrec
 import scala.collection.mutable.Map as MutableMap
 
-/*/** functions to write a class dependency map, to reuse for the rocq export. */
-class Map_Writer(file : Path) extends AutoCloseable {
-  private val writer =
-    new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file.file), UTF8.charset))
-
-  @tailrec
-  private def sumstring(names: List[String], acc: String = ":"): String = names match {
-    case Nil => ">Type'\n"
-    case List(name) => acc + name + '\n'
-    case name::rest => sumstring(rest, acc + name + '+')
-  }
-
-  def write_class_def(cname: String, cdeps: List[String]): Unit =
-    writer.write(cname + sumstring(cdeps))
-
-  def write_class_parent(cname:String, pname:String): Unit =
-    writer.write(cname+">"+pname+'\n')
-
-  def close(): Unit = writer.close()
-}*/
-
 /** Opens a path.part file for writing and then copy it to path.
  * @see [[Writer]] */
 class Part_Writer(file: Path) extends Writer {
@@ -403,12 +382,20 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
         }
     }
   }
-  
+
+  /** <code><$metc>destruct_absts<$metce>(<$lpc>t<$lpce>)</code> is the only couple
+   * <code>(<$lpc>args<$lpce>,<$lpc>t0<$lpce>)</code> such that <$lpc>t<$lpce> is
+   * <$lpc>λ args, t0<$lpce> and <$lpc>t0<$lpce> is not a λ-abstraction
+   */
   def destruct_absts(t : Term, acc: List[BoundArg] = Nil): (List[BoundArg], Term) = t match {
     case Abst(a, rem) => destruct_absts(rem, acc :+ a)
     case _ => (acc,t)
   }
 
+  /** <code><$metc>destruct_prod<$metce>(<$lpc>t<$lpce>)</code> is the only couple
+   * <code>(<$lpc>args<$lpce>,<$lpc>t0<$lpce>)</code> such that <$lpc>t<$lpce> is
+   * <$lpc>Π args, t0<$lpce> and <$lpc>t0<$lpce> is not an explicit Π-product
+   */
   def destruct_prods(t: Typ, acc: List[BoundArg] = Nil): (List[BoundArg], Typ) = t match {
     case Prod(a, rem) if a.id.isDefined || a.implicit_arg => destruct_absts(rem, acc :+ a)
     case _ => (acc, t)
@@ -510,13 +497,23 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
     else
       term_no_notation(t, notations, prevNot, right, needs_explicit)
 
+  /** Counter to create fresh names */
   var wildcard_counter: Int = 0
+  /** Writes a fresh name on <code>this</code> */
   def unknown_arg(): String = {
     val res = "wildcard_" + wildcard_counter.toString
     wildcard_counter += 1
     res
   }
-  
+
+  /** write on <code>this</code> a list of $lp arguments to an abstraction/product
+   *
+   * @param l          the list of variable binders to write
+   * @param block      when true, arguments are always parenthesised
+   * @param notations  a map between identifiers and their notation
+   * @param pre_column when false, unnamed arguments are given a name instead of
+   *                   using a wildcard.
+   */
   @tailrec
   private def args(l: List[BoundArg], block: Boolean, notations: MutableMap[Syntax.Ident, Syntax.Notation], pre_column: Boolean = false): Unit = l match {
     case a0::l0 =>
@@ -634,10 +631,6 @@ class LP_Writer(use_notations: Boolean, writer: Writer)
         symbol_and_notation(id, args, ty, Some(tm), not, notations)
       case Syntax.Theorem(id, args, ty, prf) =>
         symbol_and_notation(id, args, Some(ty), Some(prf), None, notations, "opaque ")
-      case Syntax.Coercion(t1, t2, coercion_fun) =>
-        write(s"coerce_rule coerce $t1 $t2 $$x ↪ ")
-        term(coercion_fun(Syntax.Symb("$x")), notations)
-        end_command()
     }
   }
   
@@ -771,7 +764,6 @@ class DK_Writer(writer: Writer) extends Abstract_Writer("", writer) {
         colon(); term(ty)
         dfn(); term(prf)
         dot(); nl()
-      case _ : Syntax.Coercion => error("Coercions do not exist in Dedukti")
     }
   }
 
