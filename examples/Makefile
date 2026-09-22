@@ -179,7 +179,7 @@ $(OUT_DIR)/_CoqProject: $(ISADK_DIR)/_CoqProject
 REQUIRING = mathcomp.boot.monoid mathcomp.boot.nmodule mathcomp.order.order mathcomp.algebra.numeric_hierarchy.ssrnum Isabelle.mappings
 %.v: %.lp
 	@echo lambdapi export -o stt_coq $<
-	@$(LAMBDAPI) export -o stt_coq --use-notations --encoding=$(ISADK_DIR)/lpencoding.lp --mapping=$(ISADK_DIR)/lpmappings.lp --renaming=$(ISADK_DIR)/renaming.lp --requiring="$(REQUIRING)" $< | sed -e '/^Require Export Isabelle\.STTfa\./d' > $@
+	@$(LAMBDAPI) export -o stt_coq --use-notations --encoding=$(ISADK_DIR)/encoding.lp --mapping=$(ISADK_DIR)/lpmappings.lp --renaming=$(ISADK_DIR)/renaming.lp --requiring="$(REQUIRING)" $< | sed -e '/^Require Export Isabelle\.STTfa\./d' > $@
 
 .PHONY: clean-v
 clean-v: rm-v rm-_CoqProject rm-vo-mk clean-vo
