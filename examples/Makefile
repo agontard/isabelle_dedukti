@@ -36,7 +36,7 @@ SESSION_MODNAME := session_$(subst .,_,$(subst -,_,$(SESSION)))
 include isadb_dir.mk
 
 isadb_dir.mk:
-	@echo ISADB_DIR = `isabelle getenv -b ISABELLE_HOME_USER`/heaps/`isabelle getenv -b ML_SYSTEM`_`isabelle getenv -b ML_PLATFORM`/log > $@
+	@echo ISADB_DIR = `isabelle getenv -b ISABELLE_HEAPS`/`isabelle getenv -b ML_SYSTEM`_*/log > $@
 
 .PHONY: clean-isadb-dir.mk
 clean-isadb_dir.mk:
