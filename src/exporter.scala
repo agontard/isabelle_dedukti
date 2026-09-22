@@ -301,7 +301,6 @@ object Exporter {
         val theory_name = thy.toString
 
         /** Same as remove_useless_proofs (below) but only update the Translate.replace_serial map */
-        @tailrec
         def update_useless_proofs(name: String, proof: Term.Proof, args: List[String]): Unit =
           for (PThm(serial, origin_theory, thm_name, _) <- get_call(proof,args)
                if thm_name.is_empty
