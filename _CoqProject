@@ -1,0 +1,2 @@
+-R . Isabelle
+-arg "-w '-ambiguous-paths -notation-overridden -redundant-canonical-projection -non-reversible-notation -HB.non-forgetful-inheritance' -q"
