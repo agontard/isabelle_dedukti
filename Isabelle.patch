@@ -1,6 +1,6 @@
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Enum.thy" ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Enum.thy
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Enum.thy"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Enum.thy	2026-09-21 14:18:44.586437567 +0200
+diff -urNx '*~' -x '*.orig' "HOL/Enum.thy" HOL/Enum.thy
+--- "HOL/Enum.thy"	2026-01-17 23:54:20.000000000 +0100
++++ HOL/Enum.thy	2026-09-21 14:18:44.586437567 +0200
 @@ -929,15 +929,47 @@
  definition "x mod y = (case y of a\<^sub>1 \<Rightarrow> x | _ \<Rightarrow> a\<^sub>1)"
  definition "abs = (\<lambda>x. case x of a\<^sub>3 \<Rightarrow> a\<^sub>2 | _ \<Rightarrow> x)"
@@ -189,9 +189,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
  end
  
  
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/List.thy" ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/List.thy
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/List.thy"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/List.thy	2026-09-21 14:18:44.588437595 +0200
+diff -urNx '*~' -x '*.orig' "HOL/List.thy" HOL/List.thy
+--- "HOL/List.thy"	2026-01-17 23:54:20.000000000 +0100
++++ HOL/List.thy	2026-09-21 14:18:44.588437595 +0200
 @@ -3879,7 +3879,9 @@
  
  lemma distinct_swap[simp]: "\<lbrakk> i < size xs; j < size xs\<rbrakk> \<Longrightarrow>
@@ -203,9 +203,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
  
  lemma set_swap[simp]:
    "\<lbrakk> i < size xs; j < size xs \<rbrakk> \<Longrightarrow> set(xs[i := xs!j, j := xs!i]) = set xs"
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/MacLaurin.thy" ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/MacLaurin.thy
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/MacLaurin.thy"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/MacLaurin.thy	2026-09-21 14:18:44.589437609 +0200
+diff -urNx '*~' -x '*.orig' "HOL/MacLaurin.thy" HOL/MacLaurin.thy
+--- "HOL/MacLaurin.thy"	2026-01-17 23:54:20.000000000 +0100
++++ HOL/MacLaurin.thy	2026-09-21 14:18:44.589437609 +0200
 @@ -22,7 +22,7 @@
  
  lemma eq_diff_eq': "x = y - z \<longleftrightarrow> y = x + z"
@@ -313,9 +313,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
  qed
  
  
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Quickcheck_Narrowing.thy" ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Quickcheck_Narrowing.thy
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Quickcheck_Narrowing.thy"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Quickcheck_Narrowing.thy	2026-09-21 14:24:36.014362068 +0200
+diff -urNx '*~' -x '*.orig' "HOL/Quickcheck_Narrowing.thy" HOL/Quickcheck_Narrowing.thy
+--- "HOL/Quickcheck_Narrowing.thy"	2026-01-17 23:54:20.000000000 +0100
++++ HOL/Quickcheck_Narrowing.thy	2026-09-21 14:24:36.014362068 +0200
 @@ -203,8 +203,10 @@
  
  external_file \<open>~~/src/HOL/Tools/Quickcheck/Narrowing_Engine.hs\<close>
@@ -387,9 +387,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
  
  code_printing constant "Code_Evaluation.term_of :: integer \<Rightarrow> term" \<rightharpoonup> (Haskell_Quickcheck) 
    "(let { t = Typerep.Typerep \"Code'_Numeral.integer\" [];
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Quickcheck_Random.thy" ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Quickcheck_Random.thy
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Quickcheck_Random.thy"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Quickcheck_Random.thy	2026-09-21 14:18:44.590437623 +0200
+diff -urNx '*~' -x '*.orig' "HOL/Quickcheck_Random.thy" HOL/Quickcheck_Random.thy
+--- "HOL/Quickcheck_Random.thy"	2026-01-17 23:54:20.000000000 +0100
++++ HOL/Quickcheck_Random.thy	2026-09-21 14:18:44.590437623 +0200
 @@ -230,7 +230,7 @@
         (Code_Numeral.Suc i,
          random j \<circ>\<rightarrow> (%x. random_aux_set i j \<circ>\<rightarrow> (%s. Pair (valtermify_insert x s))))])"
@@ -399,9 +399,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
    "random_aux_set i j =
      collapse (Random.select_weight [(1, Pair valterm_emptyset),
        (i, random j \<circ>\<rightarrow> (%x. random_aux_set (i - 1) j \<circ>\<rightarrow> (%s. Pair (valtermify_insert x s))))])"
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/String.thy" ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/String.thy
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/String.thy"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/String.thy	2026-09-21 14:18:44.590437623 +0200
+diff -urNx '*~' -x '*.orig' "HOL/String.thy" HOL/String.thy
+--- "HOL/String.thy"	2026-01-17 23:54:20.000000000 +0100
++++ HOL/String.thy	2026-09-21 14:18:44.590437623 +0200
 @@ -40,11 +40,21 @@
  
  lemma (in comm_semiring_1) of_nat_of_char:
@@ -438,9 +438,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
      by simp
    moreover have \<open>Literal' b0 b1 b2 b3 b4 b5 b6 s = String.literal_of_asciis
      [of_char (Char b0 b1 b2 b3 b4 b5 b6 False)] + s\<close>
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/exhaustive_generators.ML" ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/exhaustive_generators.ML
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/exhaustive_generators.ML"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/exhaustive_generators.ML	2026-09-21 14:18:44.590437623 +0200
+diff -urNx '*~' -x '*.orig' "HOL/Tools/Quickcheck/exhaustive_generators.ML" HOL/Tools/Quickcheck/exhaustive_generators.ML
+--- "HOL/Tools/Quickcheck/exhaustive_generators.ML"	2026-01-17 23:54:20.000000000 +0100
++++ HOL/Tools/Quickcheck/exhaustive_generators.ML	2026-09-21 14:18:44.590437623 +0200
 @@ -544,7 +544,7 @@
          instantiate_bounded_forall_datatype)))
  
@@ -457,9 +457,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
 -
 +*)
  end
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/narrowing_generators.ML" ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/narrowing_generators.ML
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/narrowing_generators.ML"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/narrowing_generators.ML	2026-09-21 14:18:44.590437623 +0200
+diff -urNx '*~' -x '*.orig' "HOL/Tools/Quickcheck/narrowing_generators.ML" HOL/Tools/Quickcheck/narrowing_generators.ML
+--- "HOL/Tools/Quickcheck/narrowing_generators.ML"	2026-01-17 23:54:20.000000000 +0100
++++ HOL/Tools/Quickcheck/narrowing_generators.ML	2026-09-21 14:18:44.590437623 +0200
 @@ -542,8 +542,10 @@
    Theory.setup
     (Code.datatype_interpretation ensure_partial_term_of
@@ -471,9 +471,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
      #> Context.theory_map (Quickcheck.add_tester ("narrowing", (active, test_goals))))
  
  end
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/random_generators.ML" ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/random_generators.ML
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/random_generators.ML"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Tools/Quickcheck/random_generators.ML	2026-09-21 14:18:44.591437637 +0200
+diff -urNx '*~' -x '*.orig' "HOL/Tools/Quickcheck/random_generators.ML" HOL/Tools/Quickcheck/random_generators.ML
+--- "HOL/Tools/Quickcheck/random_generators.ML"	2026-01-17 23:54:20.000000000 +0100
++++ HOL/Tools/Quickcheck/random_generators.ML	2026-09-21 14:18:44.591437637 +0200
 @@ -481,10 +481,12 @@
  
  val active = Attrib.setup_config_bool \<^binding>\<open>quickcheck_random_active\<close> (K false);
@@ -487,9 +487,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
 +*)
  
  end;
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Transcendental.thy" ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Transcendental.thy
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Transcendental.thy"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/HOL/Transcendental.thy	2026-09-21 14:18:44.592437651 +0200
+diff -urNx '*~' -x '*.orig' "HOL/Transcendental.thy" HOL/Transcendental.thy
+--- "HOL/Transcendental.thy"	2026-01-17 23:54:20.000000000 +0100
++++ HOL/Transcendental.thy	2026-09-21 14:18:44.592437651 +0200
 @@ -3547,8 +3547,9 @@
          using \<open>n \<le> p\<close> neq0_conv that(1) by blast
        then have \<section>: "(- 1::real) ^ (p div 2 - Suc 0) = - ((- 1) ^ (p div 2))"
@@ -502,9 +502,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
        have "(p - Suc (Suc 0)) div 2 = p div 2 - Suc 0"
          by simp
        with \<open>n \<le> p\<close> np  \<section> * show ?thesis
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/Pure/Build/export_theory.ML" ../Isabelle2025-2_linux/Isabelle2025-2/src/Pure/Build/export_theory.ML
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/Pure/Build/export_theory.ML"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/Pure/Build/export_theory.ML	2026-09-21 14:16:18.426389449 +0200
+diff -urNx '*~' -x '*.orig' "Pure/Build/export_theory.ML" Pure/Build/export_theory.ML
+--- "Pure/Build/export_theory.ML"	2026-01-17 23:54:20.000000000 +0100
++++ Pure/Build/export_theory.ML	2026-09-21 14:16:18.426389449 +0200
 @@ -235,7 +235,7 @@
  
      val encode_const =
@@ -570,9 +570,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
 -end;
 +end;
 \ Pas de fin de ligne à la fin du fichier
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/Pure/Build/export_theory.scala" ../Isabelle2025-2_linux/Isabelle2025-2/src/Pure/Build/export_theory.scala
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/Pure/Build/export_theory.scala"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/Pure/Build/export_theory.scala	2026-09-21 14:16:39.952691102 +0200
+diff -urNx '*~' -x '*.orig' "Pure/Build/export_theory.scala" Pure/Build/export_theory.scala
+--- "Pure/Build/export_theory.scala"	2026-01-17 23:54:20.000000000 +0100
++++ Pure/Build/export_theory.scala	2026-09-21 14:16:39.952691102 +0200
 @@ -281,7 +281,7 @@
  
    sealed case class Const(
@@ -603,9 +603,9 @@ diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_lin
                pair(Term_XML.Decode.typ,
                  pair(option(Term_XML.Decode.term), bool))))(body)
          Const(syntax, typargs, typ, abbrev, propositional)
-diff -urNx '*~' -x '*.orig' "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/Pure/proofterm.ML" ../Isabelle2025-2_linux/Isabelle2025-2/src/Pure/proofterm.ML
---- "../T\303\251l\303\251chargements/Isabelle2025-2_linux/Isabelle2025-2/src/Pure/proofterm.ML"	2026-01-17 23:54:20.000000000 +0100
-+++ ../Isabelle2025-2_linux/Isabelle2025-2/src/Pure/proofterm.ML	2026-09-21 14:15:33.227756095 +0200
+diff -urNx '*~' -x '*.orig' "Pure/proofterm.ML" Pure/proofterm.ML
+--- "Pure/proofterm.ML"	2026-01-17 23:54:20.000000000 +0100
++++ Pure/proofterm.ML	2026-09-21 14:15:33.227756095 +0200
 @@ -2059,12 +2059,13 @@
  
  local
